@@ -1,0 +1,48 @@
+@keyframes rotation {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+// 统一颜色值
+$color: #5ea8f2;
+
+.loading {
+  background-color: red;
+
+  position: relative;
+  width: 106px;
+  height: 56px;
+  background-image: linear-gradient($color 50px, transparent 0), linear-gradient($color 50px, transparent 0), linear-gradient($color 50px, transparent 0), linear-gradient($color 50px, transparent 0), radial-gradient(circle 14px, $color 100%, transparent 0);
+  background-size: 48px 15px, 15px 35px, 15px 35px, 25px 15px, 28px 28px;
+  background-position: 25px 5px, 58px 20px, 25px 17px, 2px 37px, 76px 0px;
+  background-repeat: no-repeat;
+  transform: rotate(-45deg);
+
+  &::after,
+  &::before {
+    content: "";
+    position: absolute;
+    left: -45px;
+    top: -10px;
+    width: 56px;
+    height: 56px;
+    border: 6px solid $color;
+    border-radius: 50%;
+    background-repeat: no-repeat;
+    background-image: linear-gradient($color 64px, transparent 0), linear-gradient($color 66px, transparent 0), radial-gradient(circle 4px, $color 100%, transparent 0);
+    background-size: 40px 1px, 1px 40px, 8px 8px;
+    background-position: center center;
+    -webkit-animation: rotation 0.3s linear infinite;
+    animation: rotation 0.3s linear infinite;
+  }
+
+  &::before {
+    left: 25px;
+    top: 60px;
+  }
+}
