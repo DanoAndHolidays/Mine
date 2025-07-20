@@ -5,12 +5,16 @@
     <div v-if="loading"
       class="bg-[url('assets/images/bg.png')] bg-cover bg-center loading-container h-screen w-full flex justify-center items-center">
       <div class="loading" v-if="false"></div>
-      <p class="text-white text-lg ">Loading...</p>
+      <p class="text-white text-[10rem] ">Loading...</p>
     </div>
-
     <!--主页面-->
     <div class="bg-[url('assets/images/bg5.jpeg')] bg-cover bg-center h-screen
      text-white p-10 pt-20 flex overflow-hidden" v-else>
+
+
+      <div class="header header-gradient"> “深岩智测”——基于多维信息感知与智能分析的深部开采煤岩损伤演化预警平台</div>
+
+
       <!-- left -->
       <div class="flex-1 rounded-xl p-3 mr-3 border border-dark-100 shadow-md
        bg-dark-200/20   shadow-blue-800/40">

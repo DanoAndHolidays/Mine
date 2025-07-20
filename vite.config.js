@@ -38,7 +38,7 @@ export default defineConfig(({ mode, command, ssrBuild }) => {
     },
     // 反向代理
     server: {
-      port: 90,
+      port: 130,
       open: false,//服务启动时自动在浏览器中打开应用
       hmr: true,//开启热部署
       proxy: {

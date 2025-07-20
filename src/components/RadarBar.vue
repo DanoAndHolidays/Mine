@@ -1,13 +1,14 @@
-
 <template>
   <div>
-    <div>【云端报警风险】</div>
-    <div ref="target" class="w-full h-full"></div>
+    <div class="right-bar">
+      <p>云端报警风险</p>
+    </div>
+    <div ref="target" class="w-full h-4/5"></div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted,watch } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import * as echarts from "echarts";
 // 定义接收父组件传来的值
 const props = defineProps({
@@ -60,26 +61,26 @@ const renderChart = () => {
         max: 100
       })),
       splitArea: {
-        show:false
+        show: false
       }
     },
     // 位置、极点
     polar: {
       center: ['50%', '50%'],
-      radius:'0%'
+      radius: '0%'
     },
     // 坐标角度
     angleAxis: {
       min: 0,
       interval: 5,
-      clockwise:false,//刻度逆时针
+      clockwise: false,//刻度逆时针
     },
     // 径向轴
     radiusAxis: {
       min: 0,
       interval: 20,
       splitLine: {
-        show:true
+        show: true
       }
     },
     // 图表核心配置
@@ -89,28 +90,28 @@ const renderChart = () => {
       symbolSize: 10,
       itemStyle: {
         normal: {
-          color:'#05D5FF'
+          color: '#05D5FF'
         }
       },
       areaStyle: {
         normal: {
           color: '#05D5FF',
-          opacity:0.5
+          opacity: 0.5
         }
       },
       lineStyle: {
         with: 2,
-        color:'#05D5FF'
+        color: '#05D5FF'
       },
       label: {
         normal: {
-          show:true,
+          show: true,
           color: '#05D5FF',
         }
       },
       data: [
         {
-          value:props.data.risks.map(item=>item.value)
+          value: props.data.risks.map(item => item.value)
         }
       ]
     }
@@ -118,10 +119,8 @@ const renderChart = () => {
   // 3.通过实例.setOptions(option)
   myChart.setOption(options);
 };
-watch(() => props.data,renderChart)
+watch(() => props.data, renderChart)
 
 </script>
 
-<style lang="scss" scoped>
-
-</style>
+<style lang="scss" scoped></style>

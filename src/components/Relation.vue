@@ -1,13 +1,14 @@
-
 <template>
   <div>
-    <div>【数据传递信息】</div>
-    <div ref="target" class="w-full h-full"></div>
+    <div class="right-bar">
+      <p>数据传递信息</p>
+    </div>
+    <div ref="target" class=" w-full h-4/5"></div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted,watch } from 'vue';
+import { ref, onMounted, watch } from 'vue';
 import * as echarts from "echarts";
 // 定义接收父组件传来的值
 const props = defineProps({
@@ -31,11 +32,11 @@ const renderChart = () => {
   const options = {
     xAxis: {
       show: false,
-      type:'value'
+      type: 'value'
     },
     yAxis: {
       show: false,
-      type:'value'
+      type: 'value'
     },
     series: [
       // 
@@ -50,7 +51,7 @@ const renderChart = () => {
             show: true,
             color: '#fff',
             textStyle: {
-              fontSize:14
+              fontSize: 14
             },
             formatter: function (params) {
               return params.data.speed
@@ -61,7 +62,7 @@ const renderChart = () => {
           normal: {
             show: true,
             position: 'bottom',
-            color:'#5E5E5E'
+            color: '#5E5E5E'
           }
         },
         edgeSymbol: ['none', 'arrow'],
@@ -73,7 +74,7 @@ const renderChart = () => {
               category: 0,
               active: true,
               speed: `${item.speed}kb/s`,
-              value:item.value
+              value: item.value
             }
           } else {
             return {
@@ -91,7 +92,7 @@ const renderChart = () => {
                 }
               },
               label: {
-                fontSize:'14'
+                fontSize: '14'
               }
             }
           }
@@ -104,13 +105,13 @@ const renderChart = () => {
           lineStyle: {
             normal: {
               color: '#12b5d0',
-              curveness:0.2
+              curveness: 0.2
             }
           },
           label: {
             show: true,
             position: 'middle',
-            offset:[10,0]
+            offset: [10, 0]
           }
         }))
       },
@@ -124,18 +125,18 @@ const renderChart = () => {
           trailLength: 0,
           symbol: 'arrow',
           color: 'rgba(55,155,255,0.6)',
-          symbolSize:12
+          symbolSize: 12
         },
         lineStyle: {
           normal: {
-            curveness:0.2
+            curveness: 0.2
           }
         },
         data: [
-          [{coord:[0,300]},{coord:[50,200]}],
-          [{coord:[0,100]},{coord:[50,200]}],
-          [{coord:[50,200]},{coord:[100,100]}],
-          [{coord:[50,200]},{coord:[100,300]}],
+          [{ coord: [0, 300] }, { coord: [50, 200] }],
+          [{ coord: [0, 100] }, { coord: [50, 200] }],
+          [{ coord: [50, 200] }, { coord: [100, 100] }],
+          [{ coord: [50, 200] }, { coord: [100, 300] }],
         ]
       }
     ]
@@ -144,10 +145,8 @@ const renderChart = () => {
   myChart.setOption(options);
 };
 
-watch(() => props.data,renderChart)
+watch(() => props.data, renderChart)
 
 </script>
 
-<style lang="scss" scoped>
-
-</style>
+<style lang="scss" scoped></style>

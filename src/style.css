@@ -9,8 +9,21 @@
 }
 
 /* 背景渐变+字体镂空 */
-.text-gradient{
-  background-image: linear-gradient(to bottom,#e5e4ea,#5ea8f2);
+.text-gradient {
+  background-image: linear-gradient(to bottom,
+      #5ea8f2 10%,
+      #e5e4ea);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.header-gradient {
+  background-image: linear-gradient(to bottom,
+      #5ea8f2,
+      white 60%);
+
+  background-clip: text;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
 }
@@ -18,4 +31,31 @@
 @font-face {
   font-family: 'Myfont';
   src: url(./assets/fonts/zh-cn.ttf);
+}
+
+.header {
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  transform: translate(-50%);
+  color: white;
+  font-size: 21px;
+  font-weight: bolder;
+  text-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+  white-space: nowrap;
+}
+
+.right-bar {
+  background-image: url(/src/assets/images/btn1.png);
+  background-position: center;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  height: 50px;
+  font-size: larger;
+  box-sizing: border-box;
+
+  p {
+    padding-top: 17px;
+    padding-left: 30px;
+  }
 }

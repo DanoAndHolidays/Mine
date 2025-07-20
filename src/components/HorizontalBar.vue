@@ -1,7 +1,9 @@
 <template>
   <div>
-    <div>【大区数据信息】</div>
-    <div ref="target" class="w-full h-full"></div>
+    <div class="right-bar">
+      <p>大区数据信息</p>
+    </div>
+    <div ref="target" class="w-full h-4/5"></div>
   </div>
 </template>
 
@@ -90,4 +92,4 @@ watch(
 );
 </script>
 
-<style lang="scss" scoped></style>
+<style scoped></style>
