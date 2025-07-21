@@ -3,7 +3,7 @@
     <div class="p-0">
       <!-- 总数据 -->
 
-      <div class="total-text header-gradient">总体数据</div>
+      <div class="total-text header-gradient">全局数据总览</div>
       <div class=" text-slate-300 text-center">
         数据总量：
         <span ref="totalCountTarget" class="text-gradient font-[Myfont]  text-7xl ml-2 mr-2 font-bold">
@@ -78,7 +78,7 @@ onMounted(() => {
   padding-top: 0;
 }
 
-.total-text{
+.total-text {
   text-align: center;
   font-weight: bold;
   font-size: 30px;

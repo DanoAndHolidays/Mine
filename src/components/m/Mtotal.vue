@@ -13,37 +13,37 @@
       <!-- 其他数据 -->
       <div class=" mt-3 flex flex-wrap">
         <div class=" w-1/2 text-center text-slate-400 text-sm">
-          华北：<span ref="city1" class="font-[Electronic] text-[#5dc5ef] text-3xl">9,778,988</span>
+          数据一：<span ref="city1" class="font-[Electronic] text-[#5dc5ef] text-3xl">9,778,988</span>
         </div>
         <div class=" w-1/2 text-center text-slate-400 text-sm">
-          东北：<span ref="city2" class="font-[Electronic] text-[#5dc5ef] text-3xl">9,778,988</span>
+          数据二：<span ref="city2" class="font-[Electronic] text-[#5dc5ef] text-3xl">9,778,988</span>
         </div>
         <div class=" w-1/2 text-center text-slate-400 text-sm">
-          华东：<span ref="city3" class="font-[Electronic] text-[#5dc5ef] text-3xl">9,778,988</span>
+          数据三：<span ref="city3" class="font-[Electronic] text-[#5dc5ef] text-3xl">9,778,988</span>
         </div>
         <div class=" w-1/2 text-center text-slate-400 text-sm">
-          中南：<span ref="city4" class="font-[Electronic] text-[#5dc5ef] text-3xl">9,778,988</span>
+          数据四：<span ref="city4" class="font-[Electronic] text-[#5dc5ef] text-3xl">9,778,988</span>
         </div>
         <div class=" w-1/2 text-center text-slate-400 text-sm">
-          西南：<span ref="city5" class="font-[Electronic] text-[#5dc5ef] text-3xl">9,778,988</span>
+          数据五：<span ref="city5" class="font-[Electronic] text-[#5dc5ef] text-3xl">9,778,988</span>
         </div>
         <div class=" w-1/2 text-center text-slate-400 text-sm">
-          西北：<span ref="city6" class="font-[Electronic] text-[#5dc5ef] text-3xl">9,778,988</span>
+          数据六：<span ref="city6" class="font-[Electronic] text-[#5dc5ef] text-3xl">9,778,988</span>
         </div>
 
       </div>
-      
+
     </div>
   </div>
 </template>
 
 <script setup>
-import {CountUp} from 'countup.js'
-import { ref ,onMounted} from 'vue'
+import { CountUp } from 'countup.js'
+import { ref, onMounted } from 'vue'
 const props = defineProps({
   data: {
     type: Object,
-    required:true
+    required: true
   }
 })
 
@@ -56,17 +56,15 @@ const city5 = ref(null)
 const city6 = ref(null)
 
 onMounted(() => {
-  new CountUp(totalCountTarget.value,props.data.total).start()
-  new CountUp(city1.value,props.data.hb).start()
-  new CountUp(city2.value,props.data.db).start()
-  new CountUp(city3.value,props.data.hd).start()
-  new CountUp(city4.value,props.data.zn).start()
-  new CountUp(city5.value,props.data.xn).start()
-  new CountUp(city6.value,props.data.xb).start()
+  new CountUp(totalCountTarget.value, props.data.total).start()
+  new CountUp(city1.value, props.data.hb).start()
+  new CountUp(city2.value, props.data.db).start()
+  new CountUp(city3.value, props.data.hd).start()
+  new CountUp(city4.value, props.data.zn).start()
+  new CountUp(city5.value, props.data.xn).start()
+  new CountUp(city6.value, props.data.xb).start()
 })
 
 </script>
 
-<style lang="scss" scoped>
-
-</style>
+<style lang="scss" scoped></style>

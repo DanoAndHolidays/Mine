@@ -54,10 +54,20 @@
   font-size: larger;
   box-sizing: border-box;
   font-weight: bold;
-  
+
 
   p {
     padding-top: 17px;
     padding-left: 30px;
   }
+}
+
+.btn-hover {
+  cursor: pointer;
+
+}
+
+.btn-hover:hover {
+  transform: scale(1.01);
+  text-shadow: 0 0 20px rgba(255, 255, 255, 0.518);
 }

@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="right-bar">
-      <p class="text-gradient">雷达图</p>
+      <p class="text-gradient btn-hover">雷达图</p>
     </div>
     <div ref="target" class="w-full h-4/5"></div>
   </div>

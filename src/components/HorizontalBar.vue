@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="right-bar">
-      <p class="text-gradient">散点图</p>
+      <p class="text-gradient btn-hover">散点图</p>
     </div>
     <div ref="target" class="w-full h-4/5"></div>
   </div>
