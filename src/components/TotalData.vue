@@ -1,7 +1,9 @@
 <template>
-  <div>
-    <div class=" p-6">
+  <div class="total-data">
+    <div class="p-0">
       <!-- 总数据 -->
+
+      <div class="total-text header-gradient">总体数据</div>
       <div class=" text-slate-300 text-center">
         数据总量：
         <span ref="totalCountTarget" class="text-gradient font-[Myfont]  text-7xl ml-2 mr-2 font-bold">
@@ -67,4 +69,19 @@ onMounted(() => {
 
 </script>
 
-<style lang="scss" scoped></style>
+<style lang="scss" scoped>
+.total-data {
+  background-image: url(/src/assets/images/bar1.png);
+  background-position: 0px 0px;
+  background-size: 100%;
+  background-repeat: no-repeat;
+  padding-top: 0;
+}
+
+.total-text{
+  text-align: center;
+  font-weight: bold;
+  font-size: 30px;
+  letter-spacing: 3px;
+}
+</style>

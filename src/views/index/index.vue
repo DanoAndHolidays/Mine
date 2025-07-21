@@ -3,18 +3,14 @@
 
     <!--加载页面-->
     <div v-if="loading"
-      class="bg-[url('assets/images/bg.png')] bg-cover bg-center loading-container h-screen w-full flex justify-center items-center">
-      <div class="loading" v-if="false"></div>
-      <p class="text-white text-[10rem] ">Loading...</p>
+      class="loading-container bg-[url('assets/images/bg7.jpeg')] bg-cover bg-center  h-screen w-full flex justify-center items-center">
+      <p class="text-white text-[10rem] text-gradient font-[Myfont]">Loading...</p>
     </div>
     <!--主页面-->
     <div class="bg-[url('assets/images/bg5.jpeg')] bg-cover bg-center h-screen
      text-white p-10 pt-20 flex overflow-hidden" v-else>
 
-
       <div class="header header-gradient"> “深岩智测”——基于多维信息感知与智能分析的深部开采煤岩损伤演化预警平台</div>
-
-
       <!-- left -->
       <div class="flex-1 rounded-xl p-3 mr-3 border border-dark-100 shadow-md
        bg-dark-200/20   shadow-blue-800/40">
@@ -78,8 +74,10 @@ const loadData = async () => {
   } catch (error) {
     data.value = _mockData;
   }
-  loading.value = false;
-  console.log("loaded!!!");
+  setTimeout(() => {
+    loading.value = false;
+  }, 500)
+  //loading.value = true;
 
 };
 loadData();
@@ -106,9 +104,7 @@ setInterval(() => {
 
 <style scoped lang="scss">
 .loading-container {
-  position: fixed;
-  top: 0;
-  left: 0;
+  transform: all 0.5s ease;
 }
 
 @import '@/assets/style/loading.scss';

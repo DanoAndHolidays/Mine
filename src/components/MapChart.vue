@@ -5,7 +5,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, onMounted, watch } from "vue";
 import * as echarts from "echarts";
 import mapJson from "../assets/json/china.json";
 // 定义接收父组件传来的值
@@ -15,212 +15,191 @@ const props = defineProps({
     required: true,
   },
 });
-// 1.初始化
-let myChart = null;
 const target = ref(null);
+let myChart = null;
+
 onMounted(() => {
-  // 注册地图
-  echarts.registerMap("china", mapJson);
   myChart = echarts.init(target.value);
   renderChart();
 });
 
-// 2.构建 option 配置对象
+let noise = getNoiseHelper();
+let xData = [];
+let yData = [];
+noise.seed(Math.random());
+function generateData(theta, min, max) {
+  let data = [];
+  for (let i = 0; i <= 200; i++) {
+    for (let j = 0; j <= 100; j++) {
+      // let x = (max - min) * i / 200 + min;
+      // let y = (max - min) * j / 100 + min;
+      data.push([i, j, noise.perlin2(i / 40, j / 20) + 0.5]);
+      // data.push([i, j, normalDist(theta, x) * normalDist(theta, y)]);
+    }
+    xData.push(i);
+  }
+  for (let j = 0; j < 100; j++) {
+    yData.push(j);
+  }
+  return data;
+}
+let data = generateData(2, -5, 5);
+
+function getNoiseHelper() {
+  class Grad {
+    constructor(x, y, z) {
+      this.x = x;
+      this.y = y;
+      this.z = z;
+    }
+    dot2(x, y) {
+      return this.x * x + this.y * y;
+    }
+    dot3(x, y, z) {
+      return this.x * x + this.y * y + this.z * z;
+    }
+  }
+  const grad3 = [
+    new Grad(1, 1, 0),
+    new Grad(-1, 1, 0),
+    new Grad(1, -1, 0),
+    new Grad(-1, -1, 0),
+    new Grad(1, 0, 1),
+    new Grad(-1, 0, 1),
+    new Grad(1, 0, -1),
+    new Grad(-1, 0, -1),
+    new Grad(0, 1, 1),
+    new Grad(0, -1, 1),
+    new Grad(0, 1, -1),
+    new Grad(0, -1, -1)
+  ];
+  const p = [
+    151, 160, 137, 91, 90, 15, 131, 13, 201, 95, 96, 53, 194, 233, 7, 225, 140,
+    36, 103, 30, 69, 142, 8, 99, 37, 240, 21, 10, 23, 190, 6, 148, 247, 120,
+    234, 75, 0, 26, 197, 62, 94, 252, 219, 203, 117, 35, 11, 32, 57, 177, 33,
+    88, 237, 149, 56, 87, 174, 20, 125, 136, 171, 168, 68, 175, 74, 165, 71,
+    134, 139, 48, 27, 166, 77, 146, 158, 231, 83, 111, 229, 122, 60, 211, 133,
+    230, 220, 105, 92, 41, 55, 46, 245, 40, 244, 102, 143, 54, 65, 25, 63, 161,
+    1, 216, 80, 73, 209, 76, 132, 187, 208, 89, 18, 169, 200, 196, 135, 130,
+    116, 188, 159, 86, 164, 100, 109, 198, 173, 186, 3, 64, 52, 217, 226, 250,
+    124, 123, 5, 202, 38, 147, 118, 126, 255, 82, 85, 212, 207, 206, 59, 227,
+    47, 16, 58, 17, 182, 189, 28, 42, 223, 183, 170, 213, 119, 248, 152, 2, 44,
+    154, 163, 70, 221, 153, 101, 155, 167, 43, 172, 9, 129, 22, 39, 253, 19, 98,
+    108, 110, 79, 113, 224, 232, 178, 185, 112, 104, 218, 246, 97, 228, 251, 34,
+    242, 193, 238, 210, 144, 12, 191, 179, 162, 241, 81, 51, 145, 235, 249, 14,
+    239, 107, 49, 192, 214, 31, 181, 199, 106, 157, 184, 84, 204, 176, 115, 121,
+    50, 45, 127, 4, 150, 254, 138, 236, 205, 93, 222, 114, 67, 29, 24, 72, 243,
+    141, 128, 195, 78, 66, 215, 61, 156, 180
+  ];
+  // To remove the need for index wrapping, double the permutation table length
+  let perm = new Array(512);
+  let gradP = new Array(512);
+  // This isn't a very good seeding function, but it works ok. It supports 2^16
+  // different seed values. Write something better if you need more seeds.
+  function seed(seed) {
+    if (seed > 0 && seed < 1) {
+      // Scale the seed out
+      seed *= 65536;
+    }
+    seed = Math.floor(seed);
+    if (seed < 256) {
+      seed |= seed << 8;
+    }
+    for (let i = 0; i < 256; i++) {
+      let v;
+      if (i & 1) {
+        v = p[i] ^ (seed & 255);
+      } else {
+        v = p[i] ^ ((seed >> 8) & 255);
+      }
+      perm[i] = perm[i + 256] = v;
+      gradP[i] = gradP[i + 256] = grad3[v % 12];
+    }
+  }
+  seed(0);
+  // ##### Perlin noise stuff
+  function fade(t) {
+    return t * t * t * (t * (t * 6 - 15) + 10);
+  }
+  function lerp(a, b, t) {
+    return (1 - t) * a + t * b;
+  }
+  // 2D Perlin Noise
+  function perlin2(x, y) {
+    // Find unit grid cell containing point
+    let X = Math.floor(x),
+      Y = Math.floor(y);
+    // Get relative xy coordinates of point within that cell
+    x = x - X;
+    y = y - Y;
+    // Wrap the integer cells at 255 (smaller integer period can be introduced here)
+    X = X & 255;
+    Y = Y & 255;
+    // Calculate noise contributions from each of the four corners
+    let n00 = gradP[X + perm[Y]].dot2(x, y);
+    let n01 = gradP[X + perm[Y + 1]].dot2(x, y - 1);
+    let n10 = gradP[X + 1 + perm[Y]].dot2(x - 1, y);
+    let n11 = gradP[X + 1 + perm[Y + 1]].dot2(x - 1, y - 1);
+    // Compute the fade curve value for x
+    let u = fade(x);
+    // Interpolate the four results
+    return lerp(lerp(n00, n10, u), lerp(n01, n11, u), fade(y));
+  }
+  return {
+    seed,
+    perlin2
+  };
+}
+
 const renderChart = () => {
   const options = {
-    // 时间线
-    timeline: {
-      data: props.data.voltageLevel,
-      axisType: "category",
-      autoPlay: true,
-      playInterval: 3000,
-      left: "10%",
-      right: "10%",
-      bottom: "0%",
-      width: "80%",
-      label: {
-        normal: {
-          textStyle: {
-            color: "#ddd",
-          },
-        },
-        emphasis: {
-          texteStyle: {
-            color: "#fff",
-          },
-        },
-      },
-      symbolSize: 10,
-      lineStyle: {
-        color: "#555",
-      },
-      checkpointStyle: {
-        borderColor: "#888",
-        borderWidth: 2,
-      },
-      controlStyle: {
-        showNextBtn: true,
-        showPrevBtn: true,
-        normal: {
-          color: "#666",
-          borderColor: "#666",
-        },
-        emphasis: {
-          color: "#aaa",
-          borderColor: "#aaa",
-        },
-      },
+
+    tooltip: {},
+    xAxis: {
+      type: 'category',
+      data: xData
     },
-    // 柱形图
-    baseOption: {
-      grid: {
-        right: "2%",
-        top: "15%",
-        bttom: "10%",
-        width: "20%",
-      },
-      // 地图配置
-      geo: {
-        show: true,
-        map: "china",
-        roam: true,
-        zoom: 0.8,
-        center: [113.83531246, 34.0267395887],
-        itemStyle: {
-          normal: {
-            borderColor: "rgba(147,235,248,1)",
-            borderWidth: 1,
-            areaColor: {
-              type: "radial",
-              x: 0.5,
-              y: 0.5,
-              r: 0.5,
-              colorStops: [//地图渐变色
-                {
-                  offset: 0,
-                  color: "rgba(147,235,248,0)",
-                },
-                {
-                  offset: 1,
-                  color: "rgba(147,235,248,.2)",
-                },
-              ],
-            },
-          },
-          emphasis: {
-            areaColor: "#389BB7",
-            borderColor: 0,
-          },
-        },
-      },
+    yAxis: {
+      type: 'category',
+      data: yData
     },
-    options: [],
-  };
-  // 根据时间线绘制柱形图
-  props.data.voltageLevel.forEach((item, index) => {
-    options.options.push({
-      //backgroundColor: "#142037",
-      title: [
-        {
-          text: "2019-2023 年度数据统计",
-          left: "0%",
-          top: "0%",
-          textStyle: {
-            color: "#ccc",
-            fontSize: 30,
-          },
-        },
-        {
-          id: "statistic",
-          text: item + "年度数据统计情况",
-          right: "0%",
-          top: "4%",
-          textStyle: {
-            color: "#ccc",
-            fontSize: 20,
-          },
-        },
-      ],
-      xAxis: {
-        type: "value",
-        scale: true,
-        position: "top",
-        splitLine: {
-          show: false,
-        },
-        axisLine: {
-          show: false,
-        },
-        axisTick: {
-          show: false,
-        },
-        axisLabel: {
-          margin: 2,
-          textStyle: {
-            color: "#aaa",
-          },
-        },
-      },
-      yAxis: {
-        type: "category",
-        axisLine: {
-          show: true,
-          lineStyle: {
-            color: "#ddd",
-          },
-        },
-        axisTick: {
-          show: false,
-        },
-        axisLabel: {
-          interval: 0,
-          textStyle: {
-            color: "#ddd",
-          },
-        },
-        data: props.data.categoryData[item].map((item) => item.name),
-      },
-      series: [
-        {
-          type: "bar",
-          zlevel: 1.5,
+    visualMap: {
+      min: 0,
+      max: 1,
+      calculable: true,
+      realtime: false,
+      inRange: {
+        color: [
+          '#313695',
+          '#4575b4',
+          '#74add1',
+          '#abd9e9',
+          '#e0f3f8',
+          '#ffffbf',
+          '#fee090',
+          '#fdae61',
+          '#f46d43',
+          '#d73027',
+          '#a50026'
+        ]
+      }
+    },
+    series: [
+      {
+        name: 'Gaussian',
+        type: 'heatmap',
+        data: data,
+        emphasis: {
           itemStyle: {
-            normal: {
-              color: props.data.colors[index],
-            },
-          },
-          data: props.data.categoryData[item].map((item) => item.value),
-        },
-        // 地图散点图
-        {
-          type: "effectScatter",
-          coordinateSystem: 'geo',
-          data: props.data.topData[item],
-          symbolSize: function (val) {
-            return val[2] / 4
-          },
-          showEffectOn: 'render',
-          rippleEffect: {
-            brushType:"stroke",//散点水波效果
-          },
-          label: {
-            normal: {
-              formatter: '{b}',
-              position: "right",
-              show:true
-            }
-          },
-          itemStyle: {
-            normal: {
-              color: props.data.colors[index],
-              shadowBlur: 5,
-              shadowColor:props.data.colors[index]
-            }
+            borderColor: '#333',
+            borderWidth: 1
           }
-        }
-      ]
-    });
-  });
+        },
+        progressive: 1000,
+        animation: false
+      }
+    ]
+  };
   // 3.通过实例.setOptions(option)
   myChart.setOption(options);
 };

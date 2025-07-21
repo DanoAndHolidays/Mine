@@ -53,6 +53,8 @@
   height: 50px;
   font-size: larger;
   box-sizing: border-box;
+  font-weight: bold;
+  
 
   p {
     padding-top: 17px;

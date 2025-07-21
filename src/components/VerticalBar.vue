@@ -1,6 +1,8 @@
 <template>
   <div>
-    <div>【服务资源占用比】</div>
+    <div class="right-bar">
+      <p>服务资源占用比</p>
+    </div>
     <div ref="target" id="main" class="w-full h-4/5"></div>
   </div>
 </template>
