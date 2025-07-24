@@ -153,7 +153,9 @@ function getNoiseHelper() {
 
 const renderChart = () => {
   const options = {
-
+    title: {
+      text: '热力图'
+    },
     tooltip: {},
     xAxis: {
       type: 'category',

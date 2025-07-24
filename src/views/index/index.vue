@@ -4,13 +4,19 @@
     <!--加载页面-->
     <div v-if="loading"
       class="loading-container bg-[url('assets/images/bg7.jpeg')] bg-cover bg-center  h-screen w-full flex justify-center items-center">
-      <p class="text-white text-[10rem] text-gradient font-[Myfont]">Loading...</p>
+
+      <p class="text-blue-200 text-[6rem] font-[Myfont] pl-3">
+        <i class="fa-solid fa-rotate fa-spin fa-md "></i> 加载中...
+      </p>
     </div>
     <!--主页面-->
     <div class="bg-[url('assets/images/bg5.jpeg')] bg-cover bg-center h-screen
      text-white p-10 pt-20 flex overflow-hidden" v-else>
 
       <div class="header header-gradient"> “深岩智测”——基于多维信息感知与智能分析的深部开采煤岩损伤演化预警平台</div>
+      <div class="routerlink ">
+        <button @click="toDetail" class="text-gradient header ">多样本切换</button>
+      </div>
       <!-- left -->
       <div class="flex-1 rounded-xl p-3 mr-3 border border-dark-100 shadow-md
        bg-dark-200/20   shadow-blue-800/40">
@@ -74,9 +80,7 @@ const loadData = async () => {
   } catch (error) {
     data.value = _mockData;
   }
-  setTimeout(() => {
-    loading.value = false;
-  }, 500)
+  loading.value = false;
   //loading.value = true;
 
 };
@@ -89,6 +93,10 @@ const windowSize = () => {
   width <= 768 ? $router.push({ path: "/m" }) : "";
   loading.value = true
 };
+
+const toDetail = () => {
+  $router.push({ path: "/detail" })
+}
 // window.addEventListener("resize", windowSize);
 window.onresize = () => {
   // 页面大小变化时，刷新页面

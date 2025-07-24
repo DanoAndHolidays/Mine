@@ -71,3 +71,36 @@
   transform: scale(1.01);
   text-shadow: 0 0 20px rgba(255, 255, 255, 0.518);
 }
+
+.routerlink {
+  width: 160px;
+  height: 40px;
+  position: absolute;
+  top: 0;
+  padding: 0;
+  margin: 0;
+
+  button {
+    padding: 0;
+    margin: 0;
+  }
+}
+
+.routerlink:focus {
+  outline: none;
+}
+
+.blue-border {
+  border: 1px solid #11447B;
+  background-color: #1b93e949;
+  box-shadow: 0 0 10px #344bba5e;
+  border-radius: 8px;
+}
+
+.btn:hover {
+  transform: scale(1.02);
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
