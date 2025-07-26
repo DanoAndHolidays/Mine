@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="right-bar">
-      <p class="text-gradient btn-hover">数据传递信息</p>
+      <p class="text-gradient btn-hover">LVDT传感器</p>
     </div>
     <div ref="target" class=" w-full h-4/5"></div>
   </div>

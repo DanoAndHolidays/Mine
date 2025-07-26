@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="right-bar">
-      <p class="text-gradient btn-hover">折线图</p>
+      <p class="text-gradient btn-hover">风险预警</p>
     </div>
     <div ref="target" id="main" class="w-full h-4/5"></div>
   </div>

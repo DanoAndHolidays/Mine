@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="right-bar">
-      <p class="text-gradient btn-hover">数据统计</p>
+      <p class="text-gradient btn-hover">分析结果</p>
     </div>
     <div ref="target" class="w-full h-4/5"></div>
   </div>

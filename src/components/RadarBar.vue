@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="right-bar">
-      <p class="text-gradient btn-hover">雷达图</p>
+      <p class="text-gradient btn-hover">AE统计特征参数</p>
     </div>
     <div ref="target" class="w-full h-4/5"></div>
   </div>
@@ -9,15 +9,12 @@
 
 <script setup>
 import { ref, onMounted, watch } from 'vue';
+import { useCsvStore } from "../stores/csv";
 import * as echarts from "echarts";
-// 定义接收父组件传来的值
-const props = defineProps({
-  data: {
-    type: Object,
-    required: true,
-  },
-});
-// console.log(props.data);
+import { data } from 'autoprefixer';
+
+const csvStore = useCsvStore();
+
 // 1.初始化
 let myChart = null;
 const target = ref(null);
@@ -29,41 +26,74 @@ onMounted(() => {
 // 2.构建 option 配置对象
 const renderChart = () => {
   const options = {
-    radar: {
-      indicator: [
-        { name: 'Sales', max: 6500 },
-        { name: 'Administration', max: 16000 },
-        { name: 'Information Technology', max: 30000 },
-        { name: 'Customer Support', max: 38000 },
-        { name: 'Development', max: 52000 },
-        { name: 'Marketing', max: 25000 }
-      ]
+    textStyle: {
+      fontSize: 14,       // 文字大小
+      fontFamily: 'Arial', // 字体
+      color: '#ffffff',       // 文字颜色
+      fontWeight: '100',  // 字重（normal/bold/bolder/lighter/100-900）
+      fontStyle: 'normals'  // 字体风格（normal/italic/oblique）
+    },
+    xAxis: {
+      type: 'category',
+      position: 'top',
+      data: csvStore.data.map(item => item.time),
+
+    },
+    yAxis: {
+      type: 'value',
+      name: '损伤变量d',
+      data: 'b_val',
+      min: 1000,
+    },
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: {
+        type: 'cross',
+        label: {
+          backgroundColor: '#343434'
+        }
+      }
+    },
+    grid: {
+      left: '0%',
+      right: '5%',
+      bottom: '20%',
+      containLabel: true,
+    },
+    legend: {
+      top: 20,
+      padding: 0,
+      data: ['b_val', 'strain'],
+      textStyle: {
+        fontSize: 14,       // 文字大小
+        fontFamily: 'Arial', // 字体
+        color: '#ffffff',       // 文字颜色
+        fontWeight: '100',  // 字重（normal/bold/bolder/lighter/100-900）
+        fontStyle: 'italic'  // 字体风格（normal/italic/oblique）
+      },
     },
     series: [
       {
-        name: 'Budget vs spending',
-        type: 'radar',
-        data: [
-          {
-            value: [4200, 3000, 20000, 35000, 50000, 18000],
-            name: 'Allocated Budget'
-          },
-          {
-            value: [5000, 14000, 28000, 26000, 42000, 21000],
-            name: 'Actual Spending'
-          },
-          {
-            value: [5455, 14545, 25483, 17743, 9935, 15454, 443],
-            name: 'dano'
-          }
-        ]
-      }
+        data: csvStore.data.map(item => (item.b_val) * 1000),
+        name: 'b_val',
+        type: 'line',
+        symbol: 'triangle',
+        symbolSize: 10,
+        lineStyle: {
+          color: '#5470C6',
+          width: 3,
+        },
+        itemStyle: {
+          borderWidth: 1,
+          color: 'yellow'
+        }
+      },
     ]
   };
   // 3.通过实例.setOptions(option)
   myChart.setOption(options);
 };
-watch(() => props.data, renderChart)
+watch(() => csvStore.data, () => { renderChart(); })
 
 </script>
 

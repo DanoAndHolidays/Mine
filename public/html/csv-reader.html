@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CSV多行数据间隔展示</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+</head>
+
+<body class="bg-gray-50 min-h-screen p-4 md:p-8">
+    <div class="max-w-5xl mx-auto bg-white rounded-xl shadow-lg overflow-hidden">
+        <!-- 标题区域 -->
+        <div class="bg-indigo-600 text-white p-6">
+            <h1 class="text-2xl md:text-3xl font-bold flex items-center">
+                <i class="fa fa-table mr-3"></i>CSV多行数据间隔展示工具
+            </h1>
+            <p class="mt-2 opacity-90">批量展示CSV数据，支持自定义行数和间隔时间</p>
+        </div>
+
+        <!-- 控制区域 -->
+        <div class="p-6 border-b border-gray-100">
+            <div class="mb-6">
+                <label for="fileInput" class="block text-gray-700 font-medium mb-2">选择CSV文件：</label>
+                <input type="file" id="fileInput" accept=".csv"
+                    class="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div>
+                    <label for="interval" class="block text-gray-700 font-medium mb-2">展示间隔（秒）：</label>
+                    <input type="number" id="interval" value="3" min="0.5" max="10" step="0.5"
+                        class="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label for="rowCount" class="block text-gray-700 font-medium mb-2">每次展示行数：</label>
+                    <input type="number" id="rowCount" value="5" min="1" max="20" step="1"
+                        class="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-gray-700 font-medium mb-2">当前进度：</label>
+                    <div class="flex items-center">
+                        <span id="currentRange"
+                            class="bg-indigo-100 text-indigo-800 px-3 py-1 rounded-full text-sm font-medium">
+                            未加载数据
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex flex-wrap gap-3">
+                <button id="startBtn"
+                    class="px-5 py-2 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled>
+                    <i class="fa fa-play mr-2"></i>开始展示
+                </button>
+                <button id="pauseBtn"
+                    class="px-5 py-2 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled>
+                    <i class="fa fa-pause mr-2"></i>暂停
+                </button>
+                <button id="prevBtn"
+                    class="px-5 py-2 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled>
+                    <i class="fa fa-step-backward mr-2"></i>上一页
+                </button>
+                <button id="nextBtn"
+                    class="px-5 py-2 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled>
+                    <i class="fa fa-step-forward mr-2"></i>下一页
+                </button>
+                <button id="resetBtn"
+                    class="px-5 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled>
+                    <i class="fa fa-refresh mr-2"></i>重置
+                </button>
+            </div>
+        </div>
+
+        <!-- 展示区域 -->
+        <div class="p-6">
+            <div id="noData" class="text-center py-16 text-gray-500">
+                <i class="fa fa-file-text-o text-5xl mb-4 opacity-30"></i>
+                <p>请选择一个CSV文件开始</p>
+            </div>
+
+            <div id="dataView" class="hidden">
+                <!-- 表格展示区域 -->
+                <div class="overflow-x-auto">
+                    <table class="min-w-full border-collapse">
+                        <thead>
+                            <tr id="tableHeader" class="bg-gray-50"></tr>
+                        </thead>
+                        <tbody id="tableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="error" class="hidden mt-4 p-4 bg-red-50 text-red-600 rounded-lg"></div>
+        </div>
+    </div>
+
+    <script>
+        // 获取DOM元素
+        const fileInput = document.getElementById('fileInput');
+
+        const intervalInput = document.getElementById('interval');
+        const rowCountInput = document.getElementById('rowCount');
+        
+        const startBtn = document.getElementById('startBtn');
+        const pauseBtn = document.getElementById('pauseBtn');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const currentRange = document.getElementById('currentRange');
+        const noData = document.getElementById('noData');
+        const dataView = document.getElementById('dataView');
+        const tableHeader = document.getElementById('tableHeader');
+        const tableBody = document.getElementById('tableBody');
+        const error = document.getElementById('error');
+
+        // 全局变量
+        let csvData = null; // 存储解析后的CSV数据 { headers: [], rows: [] }
+        let currentPage = 0; // 当前页码
+        let timer = null; // 定时器
+
+        // 事件监听
+        fileInput.addEventListener('change', handleFileSelect);
+        startBtn.addEventListener('click', startPresentation);
+        pauseBtn.addEventListener('click', pausePresentation);
+        prevBtn.addEventListener('click', showPreviousPage);
+        nextBtn.addEventListener('click', showNextPage);
+        resetBtn.addEventListener('click', resetPresentation);
+
+        // 处理文件选择
+        function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // 验证文件类型
+            if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
+                showError('请选择CSV格式的文件');
+                return;
+            }
+
+            // 读取文件内容
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    const content = e.target.result;
+                    csvData = parseCSV(content);
+                    resetPresentation();
+                    enableControls();
+                    showError('');
+                } catch (err) {
+                    showError('解析CSV文件失败: ' + err.message);
+                    csvData = null;
+                    disableControls();
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // 解析CSV内容
+        function parseCSV(content) {
+            const lines = content.split('\n')
+                .map(line => line.trim())
+                .filter(line => line);
+
+            if (lines.length === 0) {
+                throw new Error('CSV文件为空');
+            }
+
+            // 解析表头
+            const headers = parseCSVLine(lines[0]);
+
+            // 解析数据行
+            const rows = [];
+            for (let i = 1; i < lines.length; i++) {
+                const row = parseCSVLine(lines[i]);
+                if (row.length > 0) {
+                    // 创建键值对对象
+                    const rowData = {};
+                    headers.forEach((header, index) => {
+                        rowData[header] = row[index] || '';
+                    });
+                    rows.push(rowData);
+                }
+            }
+
+            if (rows.length === 0) {
+                throw new Error('CSV文件没有数据行');
+            }
+
+            return { headers, rows };
+        }
+
+        // 解析CSV中的一行
+        function parseCSVLine(line) {
+            const results = [];
+            let current = '';
+            let inQuotes = false;
+            let i = 0;
+
+            while (i < line.length) {
+                const char = line[i];
+
+                if (char === '"') {
+                    // 处理双引号转义
+                    if (i + 1 < line.length && line[i + 1] === '"') {
+                        current += '"';
+                        i += 2;
+                    } else {
+                        inQuotes = !inQuotes;
+                        i++;
+                    }
+                } else if (char === ',' && !inQuotes) {
+                    // 处理分隔符
+                    results.push(current);
+                    current = '';
+                    i++;
+                } else {
+                    // 普通字符
+                    current += char;
+                    i++;
+                }
+            }
+
+            // 添加最后一个字段
+            results.push(current);
+            return results;
+        }
+
+        // 开始展示
+        function startPresentation() {
+            if (!csvData || timer) return;
+
+            const intervalMs = parseFloat(intervalInput.value) * 1000;
+            if (isNaN(intervalMs) || intervalMs <= 0) {
+                showError('请输入有效的间隔时间');
+                return;
+            }
+
+            // 禁用不必要的控件
+            startBtn.disabled = true;
+            pauseBtn.disabled = false;
+            intervalInput.disabled = true;
+            rowCountInput.disabled = true;
+
+            // 设置定时器
+            timer = setInterval(() => {
+                const rowCount = parseInt(rowCountInput.value) || 5;
+                const totalPages = Math.ceil(csvData.rows.length / rowCount);
+
+                if (currentPage < totalPages - 1) {
+                    currentPage++;
+                    displayCurrentPage();
+                } else {
+                    // 到达最后一页时停止
+                    pausePresentation();
+                }
+            }, intervalMs);
+        }
+
+        // 暂停展示
+        function pausePresentation() {
+            if (timer) {
+                clearInterval(timer);
+                timer = null;
+            }
+            startBtn.disabled = false;
+            pauseBtn.disabled = true;
+            intervalInput.disabled = false;
+            rowCountInput.disabled = false;
+        }
+
+        // 显示上一页
+        function showPreviousPage() {
+            if (!csvData || currentPage <= 0) return;
+            currentPage--;
+            displayCurrentPage();
+        }
+
+        // 显示下一页
+        function showNextPage() {
+            if (!csvData) return;
+
+            const rowCount = parseInt(rowCountInput.value) || 5;
+            const totalPages = Math.ceil(csvData.rows.length / rowCount);
+
+            if (currentPage < totalPages - 1) {
+                currentPage++;
+                displayCurrentPage();
+            }
+        }
+
+        // 重置展示
+        function resetPresentation() {
+            pausePresentation();
+            currentPage = 0;
+            if (csvData) {
+                displayTableHeader();
+                displayCurrentPage();
+            }
+            updatePageCounter();
+        }
+
+        // 显示表头
+        function displayTableHeader() {
+            tableHeader.innerHTML = '';
+            csvData.headers.forEach(header => {
+                const th = document.createElement('th');
+                th.className = 'border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700';
+                th.textContent = header;
+                tableHeader.appendChild(th);
+            });
+        }
+
+        // 显示当前页数据
+        function displayCurrentPage() {
+            if (!csvData) return;
+
+            tableBody.innerHTML = '';
+            const rowCount = parseInt(rowCountInput.value) || 5;
+            const startIndex = currentPage * rowCount;
+            const endIndex = Math.min(startIndex + rowCount, csvData.rows.length);
+
+            // 显示当前页的所有行
+            for (let i = startIndex; i < endIndex; i++) {
+                const row = csvData.rows[i];
+                const tr = document.createElement('tr');
+                tr.className = i % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+
+                csvData.headers.forEach(header => {
+                    const td = document.createElement('td');
+                    td.className = 'border border-gray-300 px-4 py-2 text-gray-800';
+                    td.textContent = row[header] || '';
+                    tr.appendChild(td);
+                });
+
+                tableBody.appendChild(tr);
+            }
+
+            // 更新显示状态
+            noData.classList.add('hidden');
+            dataView.classList.remove('hidden');
+            updatePageCounter();
+        }
+
+        // 更新页码计数器
+        function updatePageCounter() {
+            if (!csvData) {
+                currentRange.textContent = '未加载数据';
+                return;
+            }
+
+            const rowCount = parseInt(rowCountInput.value) || 5;
+            const startIndex = currentPage * rowCount + 1;
+            const endIndex = Math.min((currentPage + 1) * rowCount, csvData.rows.length);
+            const totalRows = csvData.rows.length;
+
+            currentRange.textContent = `第 ${startIndex}-${endIndex} 行 / 共 ${totalRows} 行`;
+        }
+
+        // 显示错误信息
+        function showError(message) {
+            if (message) {
+                error.textContent = message;
+                error.classList.remove('hidden');
+            } else {
+                error.classList.add('hidden');
+            }
+        }
+
+        // 启用控件
+        function enableControls() {
+            startBtn.disabled = false;
+            prevBtn.disabled = false;
+            nextBtn.disabled = false;
+            resetBtn.disabled = false;
+        }
+
+        // 禁用控件
+        function disableControls() {
+            startBtn.disabled = true;
+            pauseBtn.disabled = true;
+            prevBtn.disabled = true;
+            nextBtn.disabled = true;
+            resetBtn.disabled = true;
+        }
+    </script>
+</body>
+
+</html>

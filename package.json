@@ -13,6 +13,7 @@
     "countup.js": "^2.6.2",
     "echarts": "^5.4.2",
     "echarts-wordcloud": "^2.1.0",
+    "pinia": "^3.0.3",
     "sass": "^1.77.6",
     "terser": "^5.19.3",
     "vue": "^3.3.4",

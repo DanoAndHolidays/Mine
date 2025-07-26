@@ -1,7 +1,7 @@
 <template>
   <div>
     <div class="right-bar">
-      <p class="text-gradient btn-hover">两数值关系</p>
+      <p class="text-gradient btn-hover">模型解释</p>
     </div>
     <div ref="target" class="w-full h-4/5"></div>
   </div>

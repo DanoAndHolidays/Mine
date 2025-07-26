@@ -23,7 +23,7 @@
         <!-- 横向柱状图 -->
         <HorizontalBar class="h-1/3 box-border pb-2" :data="data.regionData" />
         <!-- 雷达图 -->
-        <RadarBar class="h-1/3 box-border pb-2" :data="data.riskData" />
+        <RadarBar class="h-1/3 box-border pb-2" :data="data.riskData" /> 
         <!-- 关系图 -->
         <Relation class="h-1/3" :data="data.relationData" />
       </div>
@@ -35,6 +35,8 @@
         <!-- 地图可视化 -->
         <MapChart class=" border border-dark-100 shadow-md
        bg-dark-200/20   shadow-blue-800/40  p-3 mt-3 flex-1 rounded-xl" :data="data.mapData" />
+        <DetailBar class=" border border-dark-100 shadow-md
+       bg-dark-200/20   shadow-blue-800/40  p-3 mt-3 flex-1 rounded-xl" :nameData="{ name: 'KuZ23', age: 80 }" />
       </div>
       <!-- right -->
       <div class="flex-1  border border-dark-100 shadow-md
@@ -51,6 +53,7 @@
 </template>
 
 <script setup>
+import DetailBar from "../../components/DetailBar.vue";
 import HorizontalBar from "@/components/HorizontalBar.vue";
 import RadarBar from "@/components/RadarBar.vue";
 import Relation from "@/components/Relation.vue";
