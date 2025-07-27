@@ -7,7 +7,7 @@
 <script setup>
 import { ref, onMounted, watch } from "vue";
 import * as echarts from "echarts";
-import mapJson from "../assets/json/china.json";
+
 // 定义接收父组件传来的值
 const props = defineProps({
   data: {
