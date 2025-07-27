@@ -10,7 +10,9 @@
 ---
 
 另外项目也使用了Sass、Vite等技术栈
-项目结构样式参考：B站up程序员Sunday的视频 BV1yu411E7cm
+项目结构样式参考：B站UP**程序员Sunday**的视频 [BV1yu411E7cm](https://www.bilibili.com/video/BV1yu411E7cm)
+
+使用的说明就是先选个文件，之后点按钮就行，一看就会了。
 
 如有需要请联系我Email：Danoday@Foxmail.com
 
