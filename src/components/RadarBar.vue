@@ -41,51 +41,54 @@ const renderChart = () => {
     },
     yAxis: {
       type: 'value',
-      name: '损伤变量d',
-      data: 'b_val',
-      min: 1000,
+      name: 'b_val',
+      data: '损伤变量d',
+      min: 1,
+      splitLine: {
+        show: true,  // 显示网格线
+        lineStyle: {
+          color: '#a0a0a0',  // 浅灰色网格线
+          width: 1,
+          type: 'dashed'  // 虚线样式
+        }
+      },
     },
     tooltip: {
       trigger: 'axis',
       axisPointer: {
         type: 'cross',
         label: {
-          backgroundColor: '#343434'
+          backgroundColor: 'white',
+          color: '#505050',
         }
       }
     },
     grid: {
-      left: '0%',
+      left: '2%',
       right: '5%',
-      bottom: '20%',
+      bottom: '10%',
+      top: '5%',
       containLabel: true,
-    },
-    legend: {
-      top: 20,
-      padding: 0,
-      data: ['b_val', 'strain'],
-      textStyle: {
-        fontSize: 14,       // 文字大小
-        fontFamily: 'Arial', // 字体
-        color: '#ffffff',       // 文字颜色
-        fontWeight: '100',  // 字重（normal/bold/bolder/lighter/100-900）
-        fontStyle: 'italic'  // 字体风格（normal/italic/oblique）
-      },
     },
     series: [
       {
-        data: csvStore.data.map(item => (item.b_val) * 1000),
-        name: 'b_val',
+        label: {
+          show: true,
+          color: 'white',
+          position: 'bottom'
+        },
+        data: csvStore.data.map(item => (item.b_val)),
+        name: '损伤变量d',
         type: 'line',
         symbol: 'triangle',
         symbolSize: 10,
         lineStyle: {
-          color: '#5470C6',
+          color: 'orange',
           width: 3,
         },
         itemStyle: {
           borderWidth: 1,
-          color: 'yellow'
+          color: 'orangered'
         }
       },
     ]

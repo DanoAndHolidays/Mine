@@ -2,13 +2,6 @@
 import { onMounted, ref } from 'vue';
 import * as echarts from "echarts";
 
-const props = defineProps({
-    nameData: {
-        type: Object,
-        required: true,
-    },
-});
-
 const target = ref(null);
 const target2 = ref(null);
 const target3 = ref(null);

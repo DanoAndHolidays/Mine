@@ -1,6 +1,5 @@
 <template>
   <div class="w-full h-full">
-
     <!--加载页面-->
     <div v-if="loading"
       class="loading-container bg-[url('assets/images/bg7.jpeg')] bg-cover bg-center  h-screen w-full flex justify-center items-center">
@@ -20,83 +19,66 @@
       <!-- left -->
       <div class="flex-1 rounded-xl p-3 mr-3 border border-dark-100 shadow-md
        bg-dark-200/20   shadow-blue-800/40">
-        <!-- 横向柱状图 -->
-        <HorizontalBar class="h-1/3 box-border pb-2" :data="data.regionData" />
-        <!-- 雷达图 -->
-        <RadarBar class="h-1/3 box-border pb-2" :data="data.riskData" /> 
-        <!-- 关系图 -->
-        <Relation class="h-1/3" :data="data.relationData" />
+        <!-- ae -->
+        <HorizontalBar class="h-[30%] box-border pb-2" />
+        <!-- b值 -->
+        <RadarBar class="h-[20%] box-border pb-2" />
+        <!-- 应力 -->
+        <HorizontalBarCopy class="h-[25%]" />
+        <!--应变-->
+        <HorizontalBarCopy2 class="h-[25%]" />
       </div>
       <!-- center -->
       <div class="w-1/2 mr-3 flex flex-col rounded-xl">
-        <!-- 数据总览图 -->
+        <!-- 控制台 -->
         <TotalData class=" border border-dark-100 shadow-md 
-       bg-dark-200/20  shadow-blue-800/40 p-3 rounded-xl" :data="data.totalData" />
-        <!-- 地图可视化 -->
+       bg-dark-200/20  shadow-blue-800/40 p-3 rounded-xl" />
+        <!-- 预测部分 -->
         <MapChart class=" border border-dark-100 shadow-md
-       bg-dark-200/20   shadow-blue-800/40  p-3 mt-3 flex-1 rounded-xl" :data="data.mapData" />
-        <DetailBar class=" border border-dark-100 shadow-md
-       bg-dark-200/20   shadow-blue-800/40  p-3 mt-3 flex-1 rounded-xl" :nameData="{ name: 'KuZ23', age: 80 }" />
+       bg-dark-200/20   shadow-blue-800/40  p-3 mt-3 flex-1 rounded-xl" />
       </div>
       <!-- right -->
       <div class="flex-1  border border-dark-100 shadow-md
        bg-dark-200/20   shadow-blue-800/40  p-3 rounded-xl flex flex-col">
-        <!-- 竖向柱状图 -->
-        <VerticalBar class="h-1/3 box-border pb-2" :data="data.serverData" />
-        <!-- 环形图 -->
-        <RingBar class="h-1/3 box-border pb-2" :data="data.abnormalData" />
-        <!-- 文档云图 -->
-        <WordCloud class="h-1/3" :data="data.wordCloudData" />
+        <!-- 风险 -->
+        <VerticalBar class="h-1/3 box-border pb-2" />
+        <!-- 解释 -->
+        <RingBar class="h-1/3 box-border pb-2" />
+        <!-- 分析 -->
+        <WordCloud class="h-1/3" />
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import DetailBar from "../../components/DetailBar.vue";
 import HorizontalBar from "@/components/HorizontalBar.vue";
 import RadarBar from "@/components/RadarBar.vue";
-import Relation from "@/components/Relation.vue";
 import TotalData from "@/components/TotalData.vue";
 import MapChart from "@/components/MapChart.vue";
 import VerticalBar from "@/components/VerticalBar.vue";
 import RingBar from "@/components/RingBar.vue";
 import WordCloud from "@/components/WordCloud.vue";
-
-import { reactive, ref } from "vue";
-import { getVisualization } from "../../api/visualization";
+import HorizontalBarCopy from "../../components/HorizontalBar copy.vue";
+import HorizontalBarCopy2 from "../../components/HorizontalBar copy 2.vue";
+import { ref } from "vue";
 import { useRouter } from "vue-router";
-
 import { throttleTimeAndTimer } from "../../utils/utils";
-
-// 本地mock数据
-import mockData from "../../utils/mockData";
-let _mockData = reactive(mockData);
 
 // 加载状态
 const loading = ref(true);
-
-const data = ref(null);
-const loadData = async () => {
-  try {
-    data.value = await getVisualization();
-  } catch (error) {
-    data.value = _mockData;
-  }
-  loading.value = false;
-  //loading.value = true;
-
-};
-loadData();
-
 const $router = useRouter();
 // 获取宽度
 const windowSize = () => {
   let width = document.documentElement.clientWidth;
   width <= 768 ? $router.push({ path: "/m" }) : "";
-  loading.value = true
-};
+  
+  loading.value = true;
 
+  setTimeout(() => {
+    loading.value = false;
+  }, 500);
+};
 const toDetail = () => {
   $router.push({ path: "/detail" })
 }
@@ -107,10 +89,6 @@ window.onresize = () => {
   throttleTimeAndTimer(window.history.go(0), 500);
 };
 windowSize();
-
-setInterval(() => {
-  loadData();
-}, 3000);
 </script>
 
 <style scoped lang="scss">

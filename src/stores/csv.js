@@ -3,7 +3,7 @@ import { ref } from "vue";
 
 export const useCsvStore = defineStore('csv', () => {
 
-    const data = ref([0, 0, 0, 0, 0]);
+    const data = ref([1, 1, 1, 1, 1]);
 
     function setCsvData(csv) {
         data.value.push(csv);

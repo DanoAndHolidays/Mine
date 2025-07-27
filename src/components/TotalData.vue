@@ -4,26 +4,44 @@
       <!-- 总数据 -->
 
       <div class="total-text header-gradient">实验控制台</div>
-      <div class="flex">
+      <div class="">
 
-        <div class="w-1/2">
+        <div class="w-full">
           <div class="max-w-5xl mx-auto overflow-hidden">
             <!-- 标题区域 <div class="bg-indigo-600 text-white p-6">
               <h1 class="text-2xl md:text-3xl font-bold flex items-center">
                 <i class="fa fa-table mr-3"></i>CSV多行数据间隔展示工具
               </h1>
               <p class="mt-2 opacity-90">批量展示CSV数据，支持自定义行数和间隔时间</p>
-            </div>-->
+            </div> -->
 
 
             <!-- 控制区域 -->
-            <div class="mr-3">
-              <div class="mb-6">
-                <label for="fileInput" class="block text-gradient text-sm font-medium mb-1 mt-1">选择CSV文件：</label>
-                <input type="file" id="fileInput" ref="fileInput" accept=".csv" style="color: white;"
-                  class="w-full px-2 blue-border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            <div>
+              <div class="flex">
+                <div class="mb-1 mr-2 w-2/5">
+                  <label for="fileInput" class="block text-gradient text-sm font-medium mb-1 mt-1">选择CSV文件：</label>
+                  <input type="file" id="fileInput" ref="fileInput" accept=".csv" style="color: white;"
+                    class="w-full px-2 blue-border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div class="w-3/5 mb-3">
+                  <label class="block text-gradient text-sm font-medium my-1">进度信息：</label>
+                  <div class="blue-border w-full px-1 flex gap-5">
+                    <div>
+                      <label for="" class="text-gradient text-sm">总体步长：</label>
+                      <span class="header-gradient">{{ totalCsvRows }}步</span>
+                    </div>
+                    <div>
+                      <label for="" class="text-gradient text-sm">展示范围：</label>
+                      <span class="header-gradient">{{ csvStartIndex }}--{{ csvEndIndex }}步</span>
+                    </div>
+                    <div>
+                      <label for="" class="text-gradient text-sm">剩余时间：</label>
+                      <span class="header-gradient">{{ elapsedTime }}秒</span>
+                    </div>
+                  </div>
+                </div>
               </div>
-
               <div class="blue-border  p-1">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-2">
                   <div>
@@ -47,29 +65,29 @@
                   </div>
                 </div>
 
-                <div class="flex flex-wrap gap-1">
+                <div class="flex flex-wrap gap-2">
                   <button id="startBtn" ref="startBtn"
-                    class="px-2 py-0 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="px-10 py-0 bg-green-500 text-white rounded-md hover:bg-green-600 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled>
                     <i class="fa fa-play mr-2"></i>开始
                   </button>
                   <button id="pauseBtn" ref="pauseBtn"
-                    class="px-2 py-0 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="px-10 py-0 bg-yellow-500 text-white rounded-md hover:bg-yellow-600 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled>
                     <i class="fa fa-pause mr-2"></i>暂停
                   </button>
                   <button id="prevBtn" ref="prevBtn"
-                    class="px-2 py-0 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="px-10 py-0 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled>
                     <i class="fa fa-step-backward mr-2"></i>后退
                   </button>
                   <button id="nextBtn" ref="nextBtn"
-                    class="px-2 py-0 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="px-10 py-0 bg-indigo-500 text-white rounded-md hover:bg-indigo-600 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled>
                     <i class="fa fa-step-forward mr-2"></i>前进
                   </button>
                   <button id="resetBtn" ref="resetBtn"
-                    class="px-2 py-0 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
+                    class="px-10 py-0 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled>
                     <i class="fa fa-refresh mr-2"></i>重置
                   </button>
@@ -80,29 +98,7 @@
 
           </div>
         </div>
-        <div class="w-1/2 mr-3">
-          <!-- 展示区域 -->
-          <div class="p-0 felx justify-center align-middle">
-            <div id="noData" ref="noData" class="text-center py-0 text-gray-500">
-              <i class="fa fa-file-text-o text-5xl mb-4 opacity-30"></i>
-              <p class="p-1">请选择一个CSV文件开始</p>
-            </div>
 
-            <div id="dataView" ref="dataView" class="hidden">
-              <!-- 表格展示区域 -->
-              <div class="overflow-x-auto">
-                <table class="min-w-full border-collapse">
-                  <thead>
-                    <tr id="tableHeader" ref="tableHeader" class="bg-gray-50"></tr>
-                  </thead>
-                  <tbody id="tableBody" ref="tableBody"></tbody>
-                </table>
-              </div>
-            </div>
-
-            <div id="error" ref="error" class="hidden mt-4 p-4 bg-red-50 text-red-600 rounded-lg"></div>
-          </div>
-        </div>
       </div>
 
     </div>
@@ -110,13 +106,16 @@
 </template>
 
 <script setup>
-import { CountUp } from 'countup.js'
 import { ref, onMounted } from 'vue'
 import { useCsvStore } from "../stores/csv";
 
 const csvStore = useCsvStore();
 
+const totalCsvRows = ref(0);
+const csvStartIndex = ref(0);
+const csvEndIndex = ref(0);
 
+const elapsedTime = ref(0);
 
 // 获取DOM元素
 const fileInput = ref(null);
@@ -128,10 +127,6 @@ const prevBtn = ref(null);
 const nextBtn = ref(null);
 const resetBtn = ref(null);
 const currentRange = ref(null);
-const noData = ref(null);
-const dataView = ref(null);
-const tableHeader = ref(null);
-const tableBody = ref(null);
 const error = ref(null);
 
 // 全局变量
@@ -170,7 +165,6 @@ function handleFileSelect(event) {
 
     resetPresentation();
     enableControls();
-    showError('');
     try {
 
     } catch (err) {
@@ -252,6 +246,8 @@ function parseCSVLine(line) {
   return results;
 }
 
+let timeInter = 0;
+
 // 开始展示
 function startPresentation() {
 
@@ -259,6 +255,7 @@ function startPresentation() {
 
   const intervalMs = parseFloat(intervalInput.value.value) * 1000;
 
+  timeInter = intervalMs;
   console.log('时间间隔:' + intervalMs);
 
 
@@ -328,28 +325,16 @@ function resetPresentation() {
   pausePresentation();
   currentPage = 0;
   if (csvData) {
-    displayTableHeader();
     displayCurrentPage();
   }
   updatePageCounter();
 }
 
-// 显示表头
-function displayTableHeader() {
-  tableHeader.innerHTML = '';
-  csvData.headers.forEach(header => {
-    const th = document.createElement('th');
-    th.className = 'border border-gray-300 px-4 py-2 text-left font-semibold text-gray-700';
-    th.textContent = header;
-    tableHeader.value.appendChild(th);
-  });
-}
 
 // 显示当前页数据
 function displayCurrentPage() {
   if (!csvData) return;
 
-  tableBody.value.innerHTML = '';
   const rowCount = parseInt(rowCountInput.value) || 5;
   const startIndex = currentPage * rowCount;
   const endIndex = Math.min(startIndex + rowCount, csvData.rows.length);
@@ -358,27 +343,12 @@ function displayCurrentPage() {
   for (let i = startIndex; i < endIndex; i++) {
     const row = csvData.rows[i];
     rows.push(row);
-    const tr = document.createElement('tr');
-    tr.className = i % 2 === 0 ? 'bg-white' : 'bg-gray-50';
-
-    csvData.headers.forEach(header => {
-      const td = document.createElement('td');
-      td.className = 'border border-gray-300 px-4 py-2 text-gray-800';
-      td.textContent = row[header] || '';
-      tr.appendChild(td);
-    });
-
-    tableBody.value.appendChild(tr);
   }
   csvStore.data = rows;
-
-  // 更新显示状态
-  noData.value.classList.add('hidden');
-  dataView.value.classList.remove('hidden');
   updatePageCounter();
 }
 
-// 更新页码计数器
+// 更新进度
 function updatePageCounter() {
   if (!csvData) {
     currentRange.value.textContent = '未加载数据';
@@ -390,17 +360,13 @@ function updatePageCounter() {
   const endIndex = Math.min((currentPage + 1) * rowCount, csvData.rows.length);
   const totalRows = csvData.rows.length;
 
-  currentRange.value.textContent = `${(startIndex / totalRows * 100).toFixed(2)}%`;
-}
+  elapsedTime.value = (totalRows - endIndex) / rowCount * timeInter / 1000;
 
-// 显示错误信息
-function showError(message) {
-  if (message) {
-    error.value.textContent = message;
-    error.value.classList.remove('hidden');
-  } else {
-    error.value.classList.add('hidden');
-  }
+  totalCsvRows.value = totalRows;
+  csvStartIndex.value = startIndex;
+  csvEndIndex.value = endIndex;
+
+  currentRange.value.textContent = `${(endIndex / totalRows * 100).toFixed(2)}%`;
 }
 
 // 启用控件
@@ -419,11 +385,6 @@ function disableControls() {
   nextBtn.value.disabled = true;
   resetBtn.value.disabled = true;
 }
-
-
-
-
-
 
 </script>
 

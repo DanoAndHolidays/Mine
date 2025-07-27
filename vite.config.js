@@ -1,9 +1,5 @@
-/**
-  * @Author 怪咖
-  * @Date 2023-09-06
- */
 import {
-  defineConfig,loadEnv
+  defineConfig, loadEnv
 } from 'vite'
 import vue from '@vitejs/plugin-vue'
 
@@ -24,7 +20,7 @@ export default defineConfig(({ mode, command, ssrBuild }) => {
         },
       }
     },
-    build:{
+    build: {
       outDir: 'dist',   // 指定打包路径 dist 目录
       minify: "terser", // 必须开启：使用terserOptions才有效果
       terserOptions: {
