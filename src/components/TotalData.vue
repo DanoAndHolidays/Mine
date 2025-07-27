@@ -127,7 +127,6 @@ const prevBtn = ref(null);
 const nextBtn = ref(null);
 const resetBtn = ref(null);
 const currentRange = ref(null);
-const error = ref(null);
 
 // 全局变量
 let csvData = null; // 存储解析后的CSV数据 { headers: [], rows: [] }
@@ -276,6 +275,8 @@ function startPresentation() {
   // 设置定时器
   timer = setInterval(() => {
     const rowCount = parseInt(rowCountInput.value.value) || 5;
+    console.log(rowCountInput.value.value);
+
     const totalPages = Math.ceil(csvData.rows.length / rowCount);
 
     if (currentPage < totalPages - 1) {
@@ -311,7 +312,7 @@ function showPreviousPage() {
 function showNextPage() {
   if (!csvData) return;
 
-  const rowCount = parseInt(rowCountInput.value) || 5;
+  const rowCount = parseInt(rowCountInput.value.value) || 5;
   const totalPages = Math.ceil(csvData.rows.length / rowCount);
 
   if (currentPage < totalPages - 1) {
@@ -335,12 +336,14 @@ function resetPresentation() {
 function displayCurrentPage() {
   if (!csvData) return;
 
-  const rowCount = parseInt(rowCountInput.value) || 5;
+  const rowCount = parseInt(rowCountInput.value.value) || 5;
   const startIndex = currentPage * rowCount;
   const endIndex = Math.min(startIndex + rowCount, csvData.rows.length);
   let rows = [];
   // 显示当前页的所有行
   for (let i = startIndex; i < endIndex; i++) {
+    console.log(i);
+
     const row = csvData.rows[i];
     rows.push(row);
   }
@@ -360,7 +363,7 @@ function updatePageCounter() {
   const endIndex = Math.min((currentPage + 1) * rowCount, csvData.rows.length);
   const totalRows = csvData.rows.length;
 
-  elapsedTime.value = (totalRows - endIndex) / rowCount * timeInter / 1000;
+  elapsedTime.value = ((totalRows - endIndex) / rowCount * timeInter / 1000).toFixed(0);
 
   totalCsvRows.value = totalRows;
   csvStartIndex.value = startIndex;
