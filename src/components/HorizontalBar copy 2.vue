@@ -34,6 +34,16 @@ onMounted(() => {
 // 2.构建 option 配置对象
 const renderChart = () => {
   const options = {
+    toolbox: {
+      show: true,
+      iconStyle: {
+        borderColor: 'white',
+      },
+      feature: {
+        saveAsImage: {
+        },
+      }
+    },
     textStyle: {
       fontSize: 14,       // 文字大小
       fontFamily: 'Arial', // 字体

@@ -304,7 +304,6 @@ function startPresentation() {
   if (!csvData || timer) return;
   const intervalMs = parseFloat(intervalInput.value.value) * 1000;
   timeInter = intervalMs;
-  console.log('时间间隔:' + intervalMs);
   if (isNaN(intervalMs) || intervalMs <= 0) {
     showError('请输入有效的间隔时间');
     console.log(intervalMs);
@@ -318,7 +317,6 @@ function startPresentation() {
   // 设置定时器
   timer = setInterval(() => {
     const rowCount = parseInt(rowCountInput.value.value) || 5;
-    console.log(rowCountInput.value.value);
     const totalPages = Math.ceil(csvData.rows.length / rowCount);
     if (currentPage < totalPages - 1) {
       currentPage++;
@@ -365,6 +363,7 @@ function showNextPage() {
 // 重置展示
 function resetPresentation() {
   preStore.reset = true;
+  preStore.reset2 = true;
   pausePresentation();
   currentPage = 0;
   if (csvData) {
@@ -421,7 +420,6 @@ function displayCurrentPage() {
 
   csvStore.data = formattedCsv;
   preStore.data = formattedPre;
-  console.log("pre数据:" + preStore.data);
 
   updatePageCounter();
 }

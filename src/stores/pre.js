@@ -3,16 +3,11 @@ import { ref } from "vue";
 
 export const usePreStore = defineStore('pre', () => {
     const reset = ref(false);
+    const reset2 = ref(false);
 
-    const data = ref([1, 1, 1, 1, 1]);
+    const data = ref([]);
 
-    function setCsvData(pre) {
-        data.value.push(pre);
-    }
+    
 
-    function resetCsvData() {
-        data.value = [];
-    }
-
-    return { data, setCsvData, resetCsvData, reset };
+    return { data, reset, reset2 };
 })

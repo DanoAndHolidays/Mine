@@ -34,13 +34,10 @@
         <TotalData class=" border border-dark-100 shadow-md h-1/3
        bg-dark-200/20  shadow-blue-800/40 p-3 rounded-xl" />
         <!-- ae预测部分 -->
-        <MapChartCopy class=" border border-dark-100 shadow-md h-1/3
-       bg-dark-200/20   shadow-blue-800/40  p-3 mt-3 rounded-xl" />
         <MapChart class=" border border-dark-100 shadow-md h-1/3
        bg-dark-200/20   shadow-blue-800/40  p-3 mt-3 rounded-xl" />
-
-
-
+        <MapChartCopy class=" border border-dark-100 shadow-md h-1/3
+       bg-dark-200/20   shadow-blue-800/40  p-3 mt-3 rounded-xl" />
       </div>
       <!-- right -->
       <div class="flex-1  border border-dark-100 shadow-md

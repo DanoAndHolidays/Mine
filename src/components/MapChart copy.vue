@@ -12,12 +12,12 @@ import { usePreStore } from "../stores/pre";
 const csvStore = useCsvStore();
 const preStore = usePreStore();
 
+
 const target = ref(null);
 let myChart = null;
 
 onMounted(() => {
   myChart = echarts.init(target.value);
-  addArray();
   renderChart();
 });
 
@@ -26,12 +26,57 @@ let simCsv = [];
 let preCsv = [];
 let timCsv = [];
 let damCsv = [];
+let rangesData = [];
 
+let ranges = getValueRanges(damCsv);
 function reSetArray() {
   simCsv = [];
   preCsv = [];
   timCsv = [];
   damCsv = [];
+  rangesData = [];
+}
+
+function setChartRanges() {
+  rangesData = [
+    {
+      data: [{
+        name: `${ranges.length >= 1 ? '模型加载' : ''}`,
+        xAxis: `${ranges.length >= 1 ? ranges[0][1] : '0'}`,
+      },
+      {
+        xAxis: `${ranges.length >= 1 ? ranges[0][2] : '0'}`,
+      }],
+    },
+    {
+      data: [{
+        name: `${ranges.length >= 2 ? '弹性加载' : ''}`,
+        xAxis: `${ranges.length >= 2 ? ranges[1][1] : '0'}`,
+      },
+      {
+        xAxis: `${ranges.length >= 2 ? ranges[1][2] : '0'}`,
+      }],
+
+    },
+    {
+      data: [{
+        name: `${ranges.length >= 3 ? '裂隙演化' : ''}`,
+        xAxis: `${ranges.length >= 3 ? ranges[2][1] : '0'}`,
+      },
+      {
+        xAxis: `${ranges.length >= 3 ? ranges[2][2] : '0'}`,
+      }],
+    },
+    {
+      data: [{
+        name: `${ranges.length >= 4 ? '急剧破坏' : ''}`,
+        xAxis: `${ranges.length >= 4 ? ranges[3][1] : '0'}`,
+      },
+      {
+        xAxis: `${ranges.length >= 4 ? ranges[3][2] : '0'}`,
+      }],
+    }
+  ];
 }
 
 function getValueRanges(arr) {
@@ -45,7 +90,7 @@ function getValueRanges(arr) {
       currentValue = value;
       startIndex = index;
     } else if (value !== currentValue) {
-      result.push([currentValue + 1, startIndex, index - 1]);
+      result.push([currentValue, startIndex, index - 1]);
       currentValue = value;
       startIndex = index;
     }
@@ -57,8 +102,10 @@ function getValueRanges(arr) {
 
   return result;
 }
-
 function accumulateTimArray(newArray) {
+  if (!csvStore.data.map(item => item.time_index)) {
+    return;
+  }
   // 验证输入是否为数组
   if (!Array.isArray(newArray)) {
     console.error('传入的不是数组，无法累积');
@@ -71,6 +118,9 @@ function accumulateTimArray(newArray) {
 }
 
 function accumulateSimArray(newArray) {
+  if (!csvStore.data.map(item => item.time_index)) {
+    return;
+  }
   // 验证输入是否为数组
   if (!Array.isArray(newArray)) {
     console.error('传入的不是数组，无法累积');
@@ -83,6 +133,9 @@ function accumulateSimArray(newArray) {
 }
 
 function accumulatePreArray(newArray) {
+  if (!csvStore.data.map(item => item.time_index)) {
+    return;
+  }
   // 验证输入是否为数组
   if (!Array.isArray(newArray)) {
     console.error('传入的不是数组，无法累积');
@@ -95,6 +148,9 @@ function accumulatePreArray(newArray) {
 }
 
 function accumulateDamArray(newArray) {
+  if (!csvStore.data.map(item => item.time_index)) {
+    return;
+  }
   // 验证输入是否为数组
   if (!Array.isArray(newArray)) {
     console.error('传入的不是数组，无法累积');
@@ -106,13 +162,34 @@ function accumulateDamArray(newArray) {
   return damCsv;
 }
 
+
 const renderChart = () => {
+  addArray();
+  ranges = getValueRanges(damCsv);
+  setChartRanges();
   const options = {
-    textStyle: {       // 文字大小
-      fontFamily: 'Arial', // 字体
-      color: '#ffffff',       // 文字颜色
-      fontWeight: '100',  // 字重（normal/bold/bolder/lighter/100-900）
-      fontStyle: 'normals'  // 字体风格（normal/italic/oblique）
+    tooltip: {
+      trigger: 'axis',
+      axisPointer: {
+        type: 'cross',
+        label: {
+          backgroundColor: 'white',
+          color: '#505050',
+        },
+      }
+    },
+    textStyle: {
+      color: '#ffffff',
+    },
+    toolbox: {
+      show: true,
+      iconStyle: {
+        borderColor: 'white',
+      },
+      feature: {
+        saveAsImage: {
+        },
+      }
     },
     grid: {
       left: '0%',
@@ -122,9 +199,8 @@ const renderChart = () => {
       containLabel: true,
     },
     title: {
-      text: 'ae',
-      textStyle: {
-        fontSize: 30,       // 文字大小
+      text: '应力趋势预测',
+      textStyle: {    // 文字大小
         fontFamily: 'Arial', // 字体
         color: '#ffffff',       // 文字颜色
         fontWeight: '100',  // 字重（normal/bold/bolder/lighter/100-900）
@@ -137,7 +213,7 @@ const renderChart = () => {
     legend: {
       data: ['原始数据', '预测数据'],
       textStyle: {
-        fontSize: 14,       // 文字大小
+        fontSize: 15,       // 文字大小
         fontFamily: 'Arial', // 字体
         color: '#ffffff',       // 文字颜色
         fontWeight: '100',  // 字重（normal/bold/bolder/lighter/100-900）
@@ -160,6 +236,86 @@ const renderChart = () => {
     },
     series: [
       {
+        markArea: {
+          label:
+          {
+            color: 'white',
+          },
+          textStyle: {       // 文字大小
+            fontFamily: 'Arial', // 字体
+            color: '#ffffff',       // 文字颜色
+            fontWeight: '100',  // 字重（normal/bold/bolder/lighter/100-900）
+            fontStyle: 'normals'  // 字体风格（normal/italic/oblique）
+          },
+          silent: true,
+          itemStyle: {
+            opacity: 0.2,
+            color: 'blue',
+          },
+          data: [
+            rangesData[0].data,
+          ],
+        },
+        showSymbol: false,
+        name: '原始数据',
+        type: 'line', // 修改为 line 表示柱状图
+        data: simCsv,
+        // 柱子颜色
+        itemStyle: {
+          color: '#37A2DA'
+        },
+      },
+      {
+        markArea: {
+          label:
+          {
+            color: 'white',
+          },
+          textStyle: {       // 文字大小
+            fontFamily: 'Arial', // 字体
+            color: '#ffffff',       // 文字颜色
+            fontWeight: '100',  // 字重（normal/bold/bolder/lighter/100-900）
+            fontStyle: 'normals'  // 字体风格（normal/italic/oblique）
+          },
+          silent: true,
+          itemStyle: {
+            opacity: 0.2,
+            color: 'yellow',
+          },
+          data: [
+            rangesData[2].data,
+          ],
+        },
+        showSymbol: false,
+        name: '原始数据',
+        type: 'line', // 修改为 line 表示柱状图
+        data: simCsv,
+        // 柱子颜色
+        itemStyle: {
+          color: '#37A2DA'
+        },
+      },
+      {
+        markArea: {
+          label:
+          {
+            color: 'white',
+          },
+          textStyle: {       // 文字大小
+            fontFamily: 'Arial', // 字体
+            color: '#ffffff',       // 文字颜色
+            fontWeight: '100',  // 字重（normal/bold/bolder/lighter/100-900）
+            fontStyle: 'normals'  // 字体风格（normal/italic/oblique）
+          },
+          silent: true,
+          itemStyle: {
+            opacity: 0.2,
+            color: 'red',
+          },
+          data: [
+            rangesData[3].data,
+          ],
+        },
         showSymbol: false,
         name: '原始数据',
         type: 'line', // 修改为 line 表示柱状图
@@ -169,7 +325,24 @@ const renderChart = () => {
           color: '#37A2DA'
         }
       },
+
       {
+        markArea: {
+
+          silent: true,
+          itemStyle: {
+            opacity: 0.2,
+            color: 'green',
+          },
+          data: [
+            rangesData[1].data,
+          ],
+          label:
+          {
+            color: 'white',
+          }// 第一个 markArea 的字体颜色为红色
+
+        },
         showSymbol: false,
         name: '预测数据',
         type: 'line',
@@ -183,22 +356,6 @@ const renderChart = () => {
         itemStyle: {
           color: '#FD666D',
         },
-        markArea: {
-          itemStyle: {
-            color: 'rgba(181, 234, 140, 0.4)'
-          },
-          data: [
-            [
-              {
-                name: 'Evening Peak',
-                xAxis: '2'
-              },
-              {
-                xAxis: '5'
-              }
-            ]
-          ]
-        },
       }
     ]
   };
@@ -208,25 +365,29 @@ const renderChart = () => {
 };
 
 function addArray() {
-  accumulateTimArray(csvStore.data.map(item => item.time_index));
-  accumulateSimArray(csvStore.data.map(item => item.ae_energy));
-  accumulatePreArray(preStore.data.map(item => item.pre_ae_energy));
-  accumulateDamArray(preStore.data.map(item => item.damage_stage));
+  if (csvStore.data.length != 0 && preStore.data.length != 0) {
+    accumulateTimArray(csvStore.data.map(item => item.time_index));
+    accumulateSimArray(csvStore.data.map(item => item.stress));
+    accumulatePreArray(preStore.data.map(item => item.pre_stress));
+    accumulateDamArray(preStore.data.map(item => item.damage_stage));
+  } else {
+    return;
+  }
+
 }
 
 watch(
-  () => [preStore.data, preStore.reset],
+  () => preStore.data,
   () => {
-    const ranges = getValueRanges(damCsv);
-    console.log('每个数据的起始位置和结束位置：', ranges);
     renderChart();
-    addArray();
-    if (preStore.reset) {
-      reSetArray();
-      preStore.reset = false;
-    }
   }
 );
+
+watch(() => preStore.reset2, () => {
+  reSetArray();
+  renderChart();
+  preStore.reset2 = false;
+})
 </script>
 
 <style lang="scss" scoped></style>
