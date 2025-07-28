@@ -19,31 +19,36 @@
             <!-- 控制区域 -->
             <div>
               <div class="flex">
-                <div class="mb-1 mr-2 w-2/5">
-                  <label for="fileInput" class="block text-gradient text-sm font-medium mb-1 mt-1">选择CSV文件：</label>
+                <div class="mb-1 mr-2 w-1/4">
+                  <label for="fileInput" class="block text-gradient text-sm font-medium mb-1 mt-1">样本CSV文件：</label>
                   <input type="file" id="fileInput" ref="fileInput" accept=".csv" style="color: white;"
                     class="w-full px-2 blue-border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                 </div>
-                <div class="w-3/5 mb-3">
+                <div class="mb-1 mr-2 w-1/4">
+                  <label for="fileInput2" class="block text-gradient text-sm font-medium mb-1 mt-1">预测CSV文件：</label>
+                  <input type="file" id="fileInput2" ref="fileInput2" accept=".csv" style="color: white;"
+                    class="w-full px-2 blue-border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div class="w-1/2 mb-3">
                   <label class="block text-gradient text-sm font-medium my-1">进度信息：</label>
                   <div class="blue-border w-full px-1 flex gap-5">
                     <div>
                       <label for="" class="text-gradient text-sm">总体步长：</label>
-                      <span class="header-gradient">{{ totalCsvRows }}步</span>
+                      <span class="header-gradient">{{ totalCsvRows }}</span>
                     </div>
                     <div>
                       <label for="" class="text-gradient text-sm">展示范围：</label>
-                      <span class="header-gradient">{{ csvStartIndex }}--{{ csvEndIndex }}步</span>
+                      <span class="header-gradient">{{ csvStartIndex }}--{{ csvEndIndex }}</span>
                     </div>
                     <div>
                       <label for="" class="text-gradient text-sm">剩余时间：</label>
-                      <span class="header-gradient">{{ elapsedTime }}秒</span>
+                      <span class="header-gradient">{{ elapsedTime }}s</span>
                     </div>
                   </div>
                 </div>
               </div>
               <div class="blue-border  p-1">
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-2">
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-2">
                   <div>
                     <label for="interval" class="block text-gradient text-sm 700 font-medium mb-2">间隔(s)：</label>
                     <input type="number" id="interval" ref="intervalInput" value="1" min="0.5" max="10" step="0.5"
@@ -55,6 +60,11 @@
                       class="w-full px-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
                   </div>
                   <div>
+                    <label for="rowCount" class="block text-gradient text-sm 700 font-medium mb-2">精度：</label>
+                    <input type="number" v-model="formatNum" min="0" max="20" step="1"
+                      class="w-full px-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                  </div>
+                  <div>
                     <label class="block text-gradient text-sm 700 font-medium mb-2">进度：</label>
                     <div class="flex items-center">
                       <span id="currentRange" ref="currentRange"
@@ -63,6 +73,7 @@
                       </span>
                     </div>
                   </div>
+
                 </div>
 
                 <div class="flex flex-wrap gap-2">
@@ -108,9 +119,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useCsvStore } from "../stores/csv";
+import { usePreStore } from '../stores/pre';
 
 const csvStore = useCsvStore();
-
+const preStore = usePreStore();
+const formatNum = ref(5);
 const totalCsvRows = ref(0);
 const csvStartIndex = ref(0);
 const csvEndIndex = ref(0);
@@ -119,6 +132,7 @@ const elapsedTime = ref(0);
 
 // 获取DOM元素
 const fileInput = ref(null);
+const fileInput2 = ref(null);
 const intervalInput = ref(null);
 const rowCountInput = ref(null);
 const startBtn = ref(null);
@@ -130,12 +144,14 @@ const currentRange = ref(null);
 
 // 全局变量
 let csvData = null; // 存储解析后的CSV数据 { headers: [], rows: [] }
+let preData = null;
 let currentPage = 0; // 当前页码
 let timer = null; // 定时器
 
 onMounted(() => {
   // 事件监听
   fileInput.value.addEventListener('change', handleFileSelect);
+  fileInput2.value.addEventListener('change', handleFileSelect2);
   startBtn.value.addEventListener('click', startPresentation);
   pauseBtn.value.addEventListener('click', pausePresentation);
   prevBtn.value.addEventListener('click', showPreviousPage);
@@ -150,25 +166,53 @@ function handleFileSelect(event) {
 
   // 验证文件类型
   if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
-    showError('请选择CSV格式的文件');
+    alert("请选择csv文件！！！")
     return;
   }
 
   // 读取文件内容
   const reader = new FileReader();
   reader.onload = function (e) {
-
     const content = e.target.result;
     csvData = parseCSV(content);
     console.log(csvData);
 
     resetPresentation();
     enableControls();
+
     try {
 
     } catch (err) {
-      showError('解析CSV文件失败: ' + err.message);
+      alert('解析CSV文件失败: ' + err.message);
       csvData = null;
+      disableControls();
+    }
+  };
+  reader.readAsText(file);
+}
+
+function handleFileSelect2(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  // 验证文件类型
+  if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
+    alert("请选择csv文件！！！")
+    return;
+  }
+
+  // 读取文件内容
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    const content = e.target.result;
+    preData = parseCSV(content);
+    resetPresentation();
+    enableControls();
+    try {
+
+    } catch (err) {
+      alert('解析CSV文件失败: ' + err.message);
+      preData = null;
       disableControls();
     }
   };
@@ -196,7 +240,8 @@ function parseCSV(content) {
       // 创建键值对对象
       const rowData = {};
       headers.forEach((header, index) => {
-        rowData[header] = row[index] || '';
+        // 关键：先将字符串转为数字（非数字则保留字符串）
+        rowData[header] = parseValue(row[index] || '');
       });
       rows.push(rowData);
     }
@@ -247,38 +292,34 @@ function parseCSVLine(line) {
 
 let timeInter = 0;
 
+// 尝试将字符串转为数字（非数字则保留原字符串）
+function parseValue(value) {
+  // 如果是数字字符串，转换为数字；否则保留原字符串
+  const num = parseFloat(value);
+  return isNaN(num) ? value : num;
+}
+
 // 开始展示
 function startPresentation() {
-
   if (!csvData || timer) return;
-
   const intervalMs = parseFloat(intervalInput.value.value) * 1000;
-
   timeInter = intervalMs;
   console.log('时间间隔:' + intervalMs);
-
-
   if (isNaN(intervalMs) || intervalMs <= 0) {
     showError('请输入有效的间隔时间');
     console.log(intervalMs);
     return;
   }
-
   // 禁用不必要的控件
   startBtn.value.disabled = true;
   pauseBtn.value.disabled = false;
   intervalInput.value.disabled = true;
   rowCountInput.value.disabled = true;
-  console.log('禁用不必要的控件');
-
-
   // 设置定时器
   timer = setInterval(() => {
     const rowCount = parseInt(rowCountInput.value.value) || 5;
     console.log(rowCountInput.value.value);
-
     const totalPages = Math.ceil(csvData.rows.length / rowCount);
-
     if (currentPage < totalPages - 1) {
       currentPage++;
       displayCurrentPage();
@@ -323,6 +364,7 @@ function showNextPage() {
 
 // 重置展示
 function resetPresentation() {
+  preStore.reset = true;
   pausePresentation();
   currentPage = 0;
   if (csvData) {
@@ -331,23 +373,56 @@ function resetPresentation() {
   updatePageCounter();
 }
 
+// 格式化函数：对所有数值类型属性保留3位小数
+const formatAllNumbersTo3Decimals = (arr) => {
+  return arr.map(item => {
+    // 复制原对象避免直接修改
+    const formattedItem = { ...item };
 
-// 显示当前页数据
+    // 遍历对象所有属性
+    for (const key in formattedItem) {
+      // 只处理数值类型属性
+      if (typeof formattedItem[key] === 'number') {
+        // 保留3位小数并转换为数字类型
+        formattedItem[key] = parseFloat(formattedItem[key].toFixed(formatNum.value));
+      }
+    }
+
+    return formattedItem;
+  });
+};
+
+// 新增缓存变量
+const formattedCache = {
+  csv: new Map(), // key: 页索引, value: 格式化后的数据
+  pre: new Map()
+};
+
 function displayCurrentPage() {
-  if (!csvData) return;
-
+  if (!csvData || !preData) return;
   const rowCount = parseInt(rowCountInput.value.value) || 5;
   const startIndex = currentPage * rowCount;
   const endIndex = Math.min(startIndex + rowCount, csvData.rows.length);
-  let rows = [];
-  // 显示当前页的所有行
-  for (let i = startIndex; i < endIndex; i++) {
-    console.log(i);
+  const rows = csvData.rows.slice(startIndex, endIndex);
+  const pres = preData.rows.slice(startIndex, endIndex);
 
-    const row = csvData.rows[i];
-    rows.push(row);
+  // 优先从缓存获取，未命中则计算并缓存
+  let formattedCsv = formattedCache.csv.get(currentPage);
+  let formattedPre = formattedCache.pre.get(currentPage);
+
+  if (!formattedCsv || formatNum.value !== formattedCache.formatNum) {
+    formattedCsv = formatAllNumbersTo3Decimals(rows);
+    formattedPre = formatAllNumbersTo3Decimals(pres);
+    // 更新缓存（记录当前精度，避免精度变化后使用旧缓存）
+    formattedCache.csv.set(currentPage, formattedCsv);
+    formattedCache.pre.set(currentPage, formattedPre);
+    formattedCache.formatNum = formatNum.value;
   }
-  csvStore.data = rows;
+
+  csvStore.data = formattedCsv;
+  preStore.data = formattedPre;
+  console.log("pre数据:" + preStore.data);
+
   updatePageCounter();
 }
 
@@ -363,7 +438,7 @@ function updatePageCounter() {
   const endIndex = Math.min((currentPage + 1) * rowCount, csvData.rows.length);
   const totalRows = csvData.rows.length;
 
-  elapsedTime.value = ((totalRows - endIndex) / rowCount * timeInter / 1000).toFixed(0);
+  elapsedTime.value = (totalRows - endIndex) / rowCount * timeInter / 1000;
 
   totalCsvRows.value = totalRows;
   csvStartIndex.value = startIndex;

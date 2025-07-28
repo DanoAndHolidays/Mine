@@ -11,7 +11,6 @@
 import { ref, onMounted, watch } from 'vue';
 import { useCsvStore } from "../stores/csv";
 import * as echarts from "echarts";
-import { data } from 'autoprefixer';
 
 const csvStore = useCsvStore();
 
@@ -36,14 +35,13 @@ const renderChart = () => {
     xAxis: {
       type: 'category',
       position: 'top',
-      data: csvStore.data.map(item => item.time),
+      data: csvStore.data.map(item => item.time_index),
 
     },
     yAxis: {
       type: 'value',
       name: 'b_val',
       data: '损伤变量d',
-      min: 1,
       splitLine: {
         show: true,  // 显示网格线
         lineStyle: {

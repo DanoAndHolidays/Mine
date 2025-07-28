@@ -31,11 +31,16 @@
       <!-- center -->
       <div class="w-1/2 mr-3 flex flex-col rounded-xl">
         <!-- 控制台 -->
-        <TotalData class=" border border-dark-100 shadow-md 
+        <TotalData class=" border border-dark-100 shadow-md h-1/3
        bg-dark-200/20  shadow-blue-800/40 p-3 rounded-xl" />
-        <!-- 预测部分 -->
-        <MapChart class=" border border-dark-100 shadow-md
-       bg-dark-200/20   shadow-blue-800/40  p-3 mt-3 flex-1 rounded-xl" />
+        <!-- ae预测部分 -->
+        <MapChartCopy class=" border border-dark-100 shadow-md h-1/3
+       bg-dark-200/20   shadow-blue-800/40  p-3 mt-3 rounded-xl" />
+        <MapChart class=" border border-dark-100 shadow-md h-1/3
+       bg-dark-200/20   shadow-blue-800/40  p-3 mt-3 rounded-xl" />
+
+
+
       </div>
       <!-- right -->
       <div class="flex-1  border border-dark-100 shadow-md
@@ -64,6 +69,7 @@ import HorizontalBarCopy2 from "../../components/HorizontalBar copy 2.vue";
 import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { throttleTimeAndTimer } from "../../utils/utils";
+import MapChartCopy from "../../components/MapChart copy.vue";
 
 // 加载状态
 const loading = ref(true);
@@ -72,7 +78,7 @@ const $router = useRouter();
 const windowSize = () => {
   let width = document.documentElement.clientWidth;
   width <= 768 ? $router.push({ path: "/m" }) : "";
-  
+
   loading.value = true;
 
   setTimeout(() => {

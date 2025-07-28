@@ -73,7 +73,7 @@ const renderChart = () => {
     xAxis: [
       {
         type: 'category',
-        data: csvStore.data.map(item => item.time),
+        data: csvStore.data.map(item => item.time_index),
       }
 
     ],
@@ -124,7 +124,7 @@ watch(
   () => csvStore.data,
   (newVal) => {
     renderChart();
-    console.log(newVal);
+    
   },
   { deep: true }
 );
