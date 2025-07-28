@@ -57,6 +57,7 @@ const renderChart = () => {
         radius: '55%',
         center: ['50%', '50%'],
         data: [
+      
           { value: 335, name: '模型加载' },
           { value: 310, name: '弹性加载' },
           { value: 274, name: '裂隙演化' },
