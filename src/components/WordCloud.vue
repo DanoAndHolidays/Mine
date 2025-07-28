@@ -57,11 +57,10 @@ const renderChart = () => {
         radius: '55%',
         center: ['50%', '50%'],
         data: [
-          { value: 335, name: 'Direct' },
-          { value: 310, name: 'Email' },
-          { value: 274, name: 'Union Ads' },
-          { value: 235, name: 'Video Ads' },
-          { value: 390, name: 'Search Engine' }
+          { value: 335, name: '模型加载' },
+          { value: 310, name: '弹性加载' },
+          { value: 274, name: '裂隙演化' },
+          { value: 235, name: '急剧破坏' },
         ].sort(function (a, b) {
           return a.value - b.value;
         }),

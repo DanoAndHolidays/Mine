@@ -43,11 +43,13 @@
       <div class="flex-1  border border-dark-100 shadow-md
        bg-dark-200/20   shadow-blue-800/40  p-3 rounded-xl flex flex-col">
         <!-- 风险 -->
-        <VerticalBar class="h-1/3 box-border pb-2" />
+        <VerticalBar class="h-1/4 box-border pb-2" />
         <!-- 解释 -->
-        <RingBar class="h-1/3 box-border pb-2" />
+
+        <RingBar class="h-1/4 box-border" />
+        <RingBarCopy class="h-1/4 box-border" />
         <!-- 分析 -->
-        <WordCloud class="h-1/3" />
+        <WordCloud class="h-1/4"/>
       </div>
     </div>
   </div>
@@ -67,6 +69,7 @@ import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { throttleTimeAndTimer } from "../../utils/utils";
 import MapChartCopy from "../../components/MapChart copy.vue";
+import RingBarCopy from "../../components/RingBar copy.vue";
 
 // 加载状态
 const loading = ref(true);

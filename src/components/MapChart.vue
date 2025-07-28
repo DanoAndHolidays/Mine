@@ -199,7 +199,7 @@ const renderChart = () => {
       containLabel: true,
     },
     title: {
-      text: '应力趋势预测',
+      text: 'AE能量趋势预测',
       textStyle: {    // 文字大小
         fontFamily: 'Arial', // 字体
         color: '#ffffff',       // 文字颜色

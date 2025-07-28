@@ -1,8 +1,5 @@
 <template>
   <div>
-    <div class="right-bar">
-      <p class="text-gradient btn-hover">模型输出</p>
-    </div>
     <div ref="target" class="w-full h-full"></div>
   </div>
 </template>
@@ -55,6 +52,7 @@ const renderChart = () => {
       }
     },
     legend: {
+      bottom: 0,
       textStyle: {
         fontSize: 14,       // 文字大小
         fontFamily: 'Arial', // 字体
@@ -82,28 +80,22 @@ const renderChart = () => {
       top: '20%',
       left: '0%',
       right: '0%',
-      bottom: '0%',
+      bottom: '10%',
       containLabel: true,
     },
     series: [
       {
         lineStyle: {
-          color: '#1663B8',
+          color: '#5F9064',
+
         },
         itemStyle: {
-          color: '#1663B8',
+          color: '#5F9064',
+
         },
-        splitLine: {
-          show: true,  // 显示网格线
-          lineStyle: {
-            color: '#a0a0a0',  // 浅灰色网格线
-            width: 1,
-            type: 'dashed'  // 虚线样式
-          }
-        },
-        name: '原始AE数据',
+        name: '原始应力数据',
         type: 'line',
-        data: csvStore.data.map(item => item.ae_energy),
+        data: csvStore.data.map(item => item.stress),
         markPoint: {
           data: [
             { type: 'max', name: 'Max' },
@@ -117,17 +109,16 @@ const renderChart = () => {
 
       {
         lineStyle: {
-          color: '#FD666D',
+          color: '#EAB308',
           type: 'dashed',
         },
         itemStyle: {
-          color: '#FD666D',
+          color: '#EAB308',
 
         },
-
-        name: '预测AE数据',
+        name: '预测应力数据',
         type: 'line',
-        data: preStore.data.map(item => item.pre_ae_energy),
+        data: preStore.data.map(item => item.pre_stress),
         markPoint: {
           data: [{ name: '周最低', value: -2, xAxis: 1, yAxis: -1.5 }]
         },
