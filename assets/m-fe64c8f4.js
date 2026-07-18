@@ -1,0 +1,1 @@
+import{_ as e,q as t,b as n,c as s,d}from"./index-50fd3b87.js";const a=e({__name:"m",setup(e){const a=t(),o=()=>{document.documentElement.clientWidth>=768&&a.push({path:"/"})};return window.addEventListener("resize",o),o(),(e,t)=>(n(),s("div",null,t[0]||(t[0]=[d("h1",null,"由于数据展示所需空间较大,暂不支持移动端",-1)])))}},[["__scopeId","data-v-006d0c09"]]);export{a as default};
