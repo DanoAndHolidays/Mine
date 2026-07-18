@@ -7,7 +7,7 @@ export default defineConfig(({ mode, command, ssrBuild }) => {
   const env = loadEnv(mode, process.cwd());
   return {
     plugins: [vue()],
-    base: '/dv/',//这里更改打包相对绝对路径
+    base: './',//这里更改打包相对绝对路径
     resolve: {
       alias: {
         '@': '/src'

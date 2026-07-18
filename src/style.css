@@ -2,6 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #020914;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+button,
+input {
+  font: inherit;
+}
+
 /* 引入外部字体 */
 @font-face {
   font-family: 'Electronic';
