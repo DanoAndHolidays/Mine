@@ -5,42 +5,51 @@
       <div class="system-brand">
         <div class="brand-mark"><span></span><span></span><span></span></div>
         <div>
-          <strong>SRDT</strong>
-          <small>DEEP ROCK DIGITAL TWIN</small>
+          <strong>SZIC</strong>
+          <small>WHILE-DRILLING INTELLIGENCE</small>
         </div>
       </div>
       <div class="title-block">
-        <p><i></i> DEEP ROCK INTELLIGENCE PLATFORM <i></i></p>
-        <h1>深部巷道围岩损伤演化三维云图</h1>
+        <p><i></i> INTELLIGENT SENSING &amp; PRESSURE-RELIEF DECISION <i></i></p>
+        <h1><span>随钻智控</span><small>基于随钻参数的深部强扰动围岩状态精细感知与智能卸压决策平台</small></h1>
         <div class="title-rule"><span></span></div>
       </div>
       <div class="system-state">
         <div class="clock"><strong>{{ clockTime }}</strong><small>{{ clockDate }}</small></div>
-        <div class="online"><i></i><span>系统在线<br><small>SYSTEM ONLINE</small></span></div>
+        <div class="online"><i></i><span>双源数据已接入<br><small>VTEST4 + FITTING CONNECTED</small></span></div>
       </div>
     </header>
 
     <section class="dashboard-body">
       <aside class="side-column left-column">
+        <!-- Panel 01: 实验数据集概览 -->
         <section class="panel overview-panel">
-          <PanelTitle code="01" title="工程概况" sub="PROJECT OVERVIEW" />
+          <PanelTitle code="01" title="数据集概况" sub="DATASET OVERVIEW" />
           <div class="project-name">
             <span class="project-icon">井</span>
-            <div><strong>西翼 -860m 运输巷</strong><small>监测断面 K12+420</small></div>
-            <em>Ⅰ级</em>
+            <div>
+              <strong>随钻智控 · Vtest4 感知数据</strong>
+              <small>11 钻孔 · 3 模型 · 连续时序拟合</small>
+            </div>
+            <em v-if="store.ringCloud">{{ telemetrySampleCount }} 点映射</em>
           </div>
           <div class="overview-grid">
-            <div><span>埋深</span><strong>862<small> m</small></strong></div>
-            <div><span>洞径</span><strong>6.4<small> m</small></strong></div>
-            <div><span>围压</span><strong>{{ confiningPressure }}<small> MPa</small></strong></div>
-            <div><span>进尺</span><strong>{{ advance }}<small> m</small></strong></div>
+            <div><span>环向钻孔</span><strong>{{ store.ringCloud?.meta.boreholeCount || '--' }}<small> 孔</small></strong></div>
+            <div><span>原始测点</span><strong>{{ ((store.ringCloud?.meta.rawRows || 0) / 10000).toFixed(2) }}<small> 万</small></strong></div>
+            <div><span>拟合分组</span><strong>{{ store.ringCloud?.meta.fitGroupCount || '--' }}<small> 组</small></strong></div>
+            <div><span>钻深范围</span><strong>0–125<small> cm</small></strong></div>
+          </div>
+          <div class="relief-status" :class="{ available: reliefInfo.available }">
+            <i></i><span>泄压模型</span><strong>{{ reliefInfo.available ? '已接入' : '未检出显式数据' }}</strong>
+            <small>S99 为 10–40 MPa 变应力特殊孔</small>
           </div>
         </section>
 
+        <!-- Panel 02: 钻进参数统计 -->
         <section class="panel load-panel">
-          <PanelTitle code="02" title="多场载荷监测" sub="MULTI-FIELD LOAD" />
+          <PanelTitle code="02" title="钻进参数统计" sub="DRILLING PARAMETERS" />
           <div class="load-kpis">
-            <div class="load-row" v-for="item in loadItems" :key="item.label">
+            <div class="load-row" v-for="item in drillingKpis" :key="item.label">
               <div class="kpi-icon" :class="item.tone">{{ item.icon }}</div>
               <div class="kpi-data">
                 <span>{{ item.label }} <small>{{ item.sub }}</small></span>
@@ -53,9 +62,13 @@
           </div>
         </section>
 
+        <!-- Panel 03: 扭矩-推力随深度趋势 -->
         <section class="panel trend-panel">
-          <PanelTitle code="03" title="应力响应趋势" sub="STRESS RESPONSE" />
-          <div class="chart-head"><span>切向应力 / MPa</span><strong>峰值 {{ cloudSample.peak }} MPa</strong></div>
+          <PanelTitle code="03" title="钻进参数趋势" sub="DRILLING TREND" />
+          <div class="chart-head">
+            <span>{{ currentSample?.actualState || '读取数据中' }} · 样本 #{{ currentSample?.sample ?? '--' }}</span>
+            <strong>当前 {{ formatValue(currentSample?.torque, 1) }} N·m</strong>
+          </div>
           <svg class="trend-chart" viewBox="0 0 280 102" preserveAspectRatio="none">
             <defs>
               <linearGradient id="areaGradient" x1="0" y1="0" x2="0" y2="1">
@@ -67,9 +80,12 @@
             <g class="chart-grid"><line v-for="y in [18,42,66,90]" :key="y" x1="0" :y1="y" x2="280" :y2="y" /></g>
             <polygon :points="trendArea" fill="url(#areaGradient)" />
             <polyline :points="trendPoints" fill="none" stroke="#42dcff" stroke-width="2" filter="url(#lineGlow)" />
-            <circle :cx="trendLast.x" :cy="trendLast.y" r="3.5" fill="#061326" stroke="#ffb22b" stroke-width="2" />
+            <line v-if="trendCurrent" :x1="trendCurrent.x" y1="10" :x2="trendCurrent.x" y2="96" class="cursor-line" />
+            <circle v-if="trendCurrent" :cx="trendCurrent.x" :cy="trendCurrent.y" r="3.5" fill="#061326" stroke="#ffb22b" stroke-width="2" />
           </svg>
-          <div class="chart-axis"><span>T-30</span><span>T-20</span><span>T-10</span><span>NOW</span></div>
+          <div class="chart-axis">
+            <span>0 cm</span><span>40 cm</span><span>80 cm</span><span>125 cm</span>
+          </div>
         </section>
       </aside>
 
@@ -77,7 +93,7 @@
         <div class="scene-heading">
           <div>
             <span class="live-dot"></span>
-            <p>三维计算域 <small>3D COMPUTATIONAL DOMAIN</small></p>
+            <p>三维时序切片体云 <small>3D TEMPORAL SECTION VOLUME</small></p>
           </div>
           <nav class="metric-tabs">
             <button v-for="option in metricOptions" :key="option.key" :class="{ active: metric === option.key }" @click="metric = option.key">
@@ -88,106 +104,165 @@
         <div class="scene-frame">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
           <RockCloud3D
-            :progress="progress"
+            :progress="cloudProgress"
             :metric="metric"
             :slice="slice"
             :auto-rotate="autoRotate"
             :view-mode="viewMode"
+            :playing="playing"
+            :speed="evolutionSpeed"
+            :model-id="store.selectedModel"
+            :boreholes="store.boreholes"
+            :selected-borehole-id="store.selectedBoreholeId"
+            :max-depth="store.ringCloud?.meta.depthRangeCm?.[1] || 125"
             @sample="cloudSample = $event"
+            @select="store.selectedBoreholeId = $event"
+            @slice-select="selectAnalysisSlice"
           />
-          <div class="model-tag tag-load"><span>P₀</span><i></i>等效围压 {{ confiningPressure }} MPa</div>
-          <div class="model-tag tag-face"><span>σ<sub>max</sub></span><i></i>应力集中区</div>
-          <div class="model-tag tag-sensor"><span>S-04</span><i></i>微震阵列</div>
+          <div class="model-tag tag-load"><span>τ</span><i></i>{{ formatValue(currentSample?.torque, 1) }} N·m</div>
+          <div class="model-tag tag-face"><span>D</span><i></i>反演 {{ formatValue(currentPrediction?.damage, 0) }}%</div>
+          <div class="model-tag tag-sensor"><span>{{ selectedBorehole?.id || '--' }}</span><i></i>{{ selectedBorehole?.label || '等待钻孔数据' }}</div>
           <div class="axis-widget"><b class="axis-z">Z</b><b class="axis-y">Y</b><b class="axis-x">X</b><i></i></div>
           <div class="cloud-legend">
             <div class="legend-title"><span>{{ activeMetric.label }}</span><small>{{ activeMetric.unit }}</small></div>
-            <div class="legend-scale"></div>
+            <div class="legend-scale damage-scale"></div>
             <div class="legend-labels"><span v-for="tick in activeMetric.ticks" :key="tick">{{ tick }}</span></div>
           </div>
           <div class="scene-data-strip">
-            <div><span>网格单元</span><strong>48,960</strong></div>
-            <div><span>计算步</span><strong>{{ stepLabel }}</strong></div>
-            <div><span>收敛误差</span><strong>2.8e-⁵</strong></div>
-            <div><span>刷新率</span><strong>60 FPS</strong></div>
+            <div><span>分析切面</span><strong>{{ analysisDepth.toFixed(1) }} cm · {{ selectedBorehole?.id || '--' }}</strong></div>
+            <div><span>反演损伤</span><strong>{{ formatValue(currentPrediction?.damage, 0) }}%</strong></div>
+            <div><span>实测 / 反演应力</span><strong>{{ formatValue(currentSample?.actualStress, 0) }} / {{ formatValue(currentPrediction?.stress, 0) }} MPa</strong></div>
+            <div><span>反演状态</span><strong>{{ currentPrediction?.state || '--' }}</strong></div>
           </div>
         </div>
         <div class="scene-controls">
-          <div class="view-switch">
-            <button v-for="view in views" :key="view.key" :class="{ active: viewMode === view.key }" @click="viewMode = view.key">
-              <span>{{ view.icon }}</span>{{ view.label }}
-            </button>
+          <div class="control-row">
+            <div class="view-switch">
+              <button v-for="view in views" :key="view.key" :class="{ active: viewMode === view.key }" @click="viewMode = view.key">
+                <span>{{ view.icon }}</span>{{ view.label }}
+              </button>
+            </div>
+            <div class="model-select-inline">
+              <button v-for="m in store.models" :key="m.id"
+                :class="{ active: store.selectedModel === m.id }"
+                @click="store.selectedModel = m.id">{{ m.id.toUpperCase() }}</button>
+            </div>
+            <div class="borehole-select-inline">
+              <button v-for="hole in store.boreholes" :key="hole.id"
+                :class="{ active: store.selectedBoreholeId === hole.id, special: hole.role === 'special-variable-stress' }"
+                :title="`${hole.id} · ${hole.sourceFile}`"
+                @click="store.selectedBoreholeId = hole.id">{{ hole.id.slice(-2) }}</button>
+            </div>
           </div>
-          <label class="slice-control">
-            <span>剖切位置</span>
-            <input v-model.number="slice" type="range" min="0" max="100" />
-            <em>{{ slice }}%</em>
-          </label>
-          <button class="rotate-toggle" :class="{ active: autoRotate }" @click="autoRotate = !autoRotate"><i>↻</i>{{ autoRotate ? '自动旋转' : '旋转已停' }}</button>
+          <div class="control-row sub">
+            <label class="slice-control">
+              <span>分析切面</span>
+              <input v-model.number="slice" type="range" min="0" max="100" step="0.1" @input="pinAnalysisSlice" />
+              <em>{{ analysisDepth.toFixed(1) }}cm</em>
+            </label>
+            <button class="follow-toggle" :class="{ active: !analysisPinned }" @click="followCurrentSlice">{{ analysisPinned ? '跟随当前' : '实时跟随中' }}</button>
+            <button class="rotate-toggle" :class="{ active: autoRotate }" @click="autoRotate = !autoRotate"><i>↻</i>{{ autoRotate ? '旋转' : '停止' }}</button>
+          </div>
         </div>
       </section>
 
       <aside class="side-column right-column">
+        <!-- Panel 04: 模型反演精度 -->
         <section class="panel damage-panel">
-          <PanelTitle code="04" title="破坏分区识别" sub="DAMAGE ZONING" />
+          <PanelTitle code="04" title="模型反演精度" sub="MODEL ACCURACY" />
           <div class="damage-viz">
-            <div class="damage-rings" :style="{ '--evolution': progress / 100 }">
-              <i class="ring elastic"></i><i class="ring damage"></i><i class="ring plastic"></i><span class="tunnel-hole"></span>
-              <b class="scan-line"></b>
+            <div class="accuracy-gauges">
+              <div class="gauge-ring damage-gauge" :style="{ '--pct': activeModel?.damage_accuracy * 100 }">
+                <span>{{ ((activeModel?.damage_accuracy || 0) * 100).toFixed(1) }}%</span>
+                <small>损伤</small>
+              </div>
+              <div class="gauge-ring stress-gauge" :style="{ '--pct': activeModel?.stress_accuracy * 100 }">
+                <span>{{ ((activeModel?.stress_accuracy || 0) * 100).toFixed(1) }}%</span>
+                <small>应力</small>
+              </div>
+              <div class="gauge-ring state-gauge" :style="{ '--pct': activeModel?.state_accuracy * 100 }">
+                <span>{{ ((activeModel?.state_accuracy || 0) * 100).toFixed(1) }}%</span>
+                <small>状态</small>
+              </div>
             </div>
-            <div class="damage-value"><span>塑性区半径</span><strong>{{ cloudSample.plasticRadius }}<em> m</em></strong></div>
           </div>
           <div class="zone-legend">
-            <div><i class="plastic-color"></i><span>塑性区</span><strong>{{ zoneRatios[0] }}%</strong></div>
-            <div><i class="damage-color"></i><span>损伤区</span><strong>{{ zoneRatios[1] }}%</strong></div>
-            <div><i class="elastic-color"></i><span>弹性区</span><strong>{{ zoneRatios[2] }}%</strong></div>
+            <div><i class="plastic-color"></i><span>损伤准确率</span><strong>{{ ((activeModel?.damage_accuracy || 0) * 100).toFixed(1) }}%</strong></div>
+            <div><i class="damage-color"></i><span>应力准确率</span><strong>{{ ((activeModel?.stress_accuracy || 0) * 100).toFixed(1) }}%</strong></div>
+            <div><i class="elastic-color"></i><span>F1 分数</span><strong>{{ ((activeModel?.macro_f1 || 0) * 100).toFixed(1) }}%</strong></div>
           </div>
         </section>
 
+        <!-- Panel 05: 模型对比 -->
         <section class="panel sensor-panel">
-          <PanelTitle code="05" title="传感器阵列" sub="SENSOR MATRIX" />
-          <div class="sensor-head"><span>点位</span><span>实时值</span><span>状态</span></div>
-          <div class="sensor-item" v-for="sensor in sensorItems" :key="sensor.id">
-            <span><i :class="sensor.state"></i>{{ sensor.id }}</span>
-            <strong>{{ sensor.value }}<small>{{ sensor.unit }}</small></strong>
-            <em :class="sensor.state">{{ sensor.state === 'warn' ? '关注' : '正常' }}</em>
+          <PanelTitle code="05" title="三模型性能对比" sub="MODEL COMPARISON" />
+          <div class="sensor-head"><span>模型</span><span>损伤Acc</span><span>应力Acc</span></div>
+          <div class="sensor-item" v-for="m in store.models" :key="m.id"
+            :class="{ active: store.selectedModel === m.id }"
+            @click="store.selectedModel = m.id">
+            <span><i :class="store.selectedModel === m.id ? 'active' : ''"></i>{{ m.name_en }}</span>
+            <strong>{{ (m.damage_accuracy * 100).toFixed(1) }}%</strong>
+            <em :class="m.stress_accuracy > 0.8 ? 'good' : 'normal'">{{ (m.stress_accuracy * 100).toFixed(1) }}%</em>
           </div>
         </section>
 
+        <!-- Panel 06: 关键发现 -->
         <section class="panel warning-panel" :class="riskLevel.className">
           <div class="warning-signal"><span></span><i>!</i></div>
           <div class="warning-copy">
-            <small>INTELLIGENT EARLY WARNING</small>
-            <strong>{{ riskLevel.title }}</strong>
-            <p>{{ riskLevel.message }}</p>
+            <small>KEY FINDINGS</small>
+            <strong>{{ currentFinding.title }}</strong>
+            <p>{{ currentFinding.message }}</p>
           </div>
-          <div class="risk-score"><strong>{{ riskScore }}</strong><span>风险指数</span></div>
+          <div class="risk-score"><strong>{{ findingIndex + 1 }}</strong><span>/ {{ findings.length }}</span></div>
         </section>
       </aside>
     </section>
 
     <footer class="evolution-footer">
       <div class="evolution-title">
-        <button class="play-button" @click="playing = !playing"><span>{{ playing ? 'Ⅱ' : '▶' }}</span></button>
-        <div><strong>围岩演化推演</strong><small>ROCK MASS EVOLUTION</small></div>
+        <button class="play-button" :class="{ paused: !playing }" :title="playing ? '暂停并锁定当前分析面' : '继续自动演进'" @click="togglePlay">
+          <span>{{ playing ? 'Ⅱ' : '▶' }}</span>
+          <em>{{ playing ? '暂停分析' : '继续演进' }}</em>
+        </button>
+        <div>
+          <strong>钻进时空演进</strong>
+          <small>SPATIOTEMPORAL EVOLUTION</small>
+        </div>
       </div>
       <div class="timeline-wrap">
-        <div class="timeline-labels"><span>开挖扰动</span><span>应力重分布</span><span>损伤萌生</span><span>塑性扩展</span><span>趋于稳定</span></div>
-        <input v-model.number="progress" class="evolution-range" type="range" min="0" max="100" step="0.1" />
-        <div class="timeline-points"><i v-for="n in 5" :key="n" :class="{ passed: progress >= (n - 1) * 25 }"></i></div>
-        <div class="timeline-time"><span>0 h</span><span>6 h</span><span>12 h</span><span>18 h</span><span>24 h</span></div>
+        <div class="timeline-labels">
+          <span>D80</span><span>D60</span><span>D40</span><span>D20</span><span>D0</span>
+        </div>
+        <input v-model.number="evolutionProgress" class="evolution-range" type="range" min="0" max="100" step="0.05"
+          @input="onProgressInput" />
+        <div class="timeline-points">
+          <i v-for="n in 5" :key="n" :class="{ passed: evolutionProgress >= (n - 1) * 25 }"></i>
+        </div>
+        <div class="timeline-sub">
+          <span>当前演进 {{ liveDepth.toFixed(2) }} cm · 分析面 {{ analysisDepth.toFixed(1) }} cm</span>
+          <span class="speed-control">
+            速度
+            <button v-for="s in speedOptions" :key="s.val" :class="{ active: evolutionSpeed === s.val }"
+              @click="evolutionSpeed = s.val">{{ s.label }}</button>
+          </span>
+          <span>损伤 {{ currentDamageLabel }}</span>
+        </div>
       </div>
       <div class="progress-readout">
-        <span>演化进度</span>
-        <strong>{{ progress.toFixed(1) }}<em>%</em></strong>
-        <small>STEP {{ stepLabel }} / 120</small>
+        <span>径向钻进深度</span>
+        <strong>{{ liveDepth.toFixed(1) }}<em>cm</em></strong>
+        <small>样本 #{{ currentSample?.sample ?? '--' }} · {{ currentPrediction?.state || '--' }}</small>
       </div>
+      <div class="data-provenance">SOURCE · {{ store.ringCloud?.meta.sources?.join(' + ') || 'LOADING' }} · {{ store.ringCloud?.meta.fittingMethod || '' }}</div>
     </footer>
   </main>
 </template>
 
 <script setup>
-import { computed, defineComponent, h, onBeforeUnmount, ref } from 'vue'
+import { computed, defineComponent, h, onBeforeUnmount, onMounted, ref } from 'vue'
 import RockCloud3D from '@/components/RockCloud3D.vue'
+import { useDrillingStore } from '@/stores/drillingData.js'
 
 const PanelTitle = defineComponent({
   props: ['code', 'title', 'sub'],
@@ -200,84 +275,203 @@ const PanelTitle = defineComponent({
   }
 })
 
-const progress = ref(38.6)
-const playing = ref(true)
+const store = useDrillingStore()
+
+// ---- view state ----
 const metric = ref('stress')
 const slice = ref(0)
+const analysisPinned = ref(false)
 const autoRotate = ref(true)
 const viewMode = ref('cloud')
 const now = ref(new Date())
-const cloudSample = ref({ peak: 60, plasticRadius: '1.96' })
+const cloudSample = ref({ borehole: null, sample: null })
+const findingIndex = ref(0)
+const findingTimer = ref(null)
+
+// ---- evolution state ----
+const evolutionProgress = ref(0)
+const playing = ref(true)
+const evolutionSpeed = ref(2) // 1=慢, 2=中, 3=快
+const speedOptions = [
+  { val: 1, label: '0.5x' },
+  { val: 2, label: '1x' },
+  { val: 3, label: '2x' }
+]
+
+// Auto-advance evolution
+const evolutionTimer = ref(null)
+
+function startEvolution() {
+  stopEvolution()
+  evolutionTimer.value = window.setInterval(() => {
+    if (!playing.value) return
+    const step = 0.08 * evolutionSpeed.value
+    evolutionProgress.value = evolutionProgress.value >= 100 ? 0 : Number((evolutionProgress.value + step).toFixed(2))
+    if (!analysisPinned.value) slice.value = evolutionProgress.value
+  }, 80)
+}
+
+function stopEvolution() {
+  if (evolutionTimer.value) {
+    window.clearInterval(evolutionTimer.value)
+    evolutionTimer.value = null
+  }
+}
+
+function togglePlay() {
+  if (playing.value) {
+    playing.value = false
+    analysisPinned.value = true
+    slice.value = evolutionProgress.value
+    return
+  }
+  playing.value = true
+  analysisPinned.value = false
+  slice.value = evolutionProgress.value
+}
+
+function onProgressInput() {
+  playing.value = false
+  analysisPinned.value = true
+  slice.value = evolutionProgress.value
+}
+
+function pinAnalysisSlice() {
+  playing.value = false
+  analysisPinned.value = true
+}
+
+function selectAnalysisSlice(value) {
+  playing.value = false
+  slice.value = Number(value.toFixed(2))
+  analysisPinned.value = true
+}
+
+function followCurrentSlice() {
+  analysisPinned.value = false
+  slice.value = evolutionProgress.value
+}
+
+const telemetrySeries = computed(() => store.currentTelemetrySeries)
+const telemetryIndex = computed(() => {
+  const lastIndex = Math.max(telemetrySeries.value.length - 1, 0)
+  return Math.min(Math.round((slice.value / 100) * lastIndex), lastIndex)
+})
+const currentSample = computed(() => telemetrySeries.value[telemetryIndex.value] || null)
+const currentPrediction = computed(() => currentSample.value?.predictions?.[store.selectedModel] || null)
+const analysisDepth = computed(() => Number(currentSample.value?.depth || slice.value / 100 * 125))
+const liveDepth = computed(() => evolutionProgress.value / 100 * Number(store.ringCloud?.meta?.depthRangeCm?.[1] || 125))
+const currentDamageLabel = computed(() => `D${currentSample.value?.actualDamage ?? '--'}`)
 
 const metricOptions = [
-  { key: 'stress', label: '等效应力', unit: 'MPa', ticks: ['80', '64', '48', '32', '16', '0'] },
-  { key: 'displacement', label: '位移场', unit: 'mm', ticks: ['42', '34', '25', '17', '8', '0'] },
-  { key: 'plastic', label: '塑性应变', unit: '%', ticks: ['2.5', '2.0', '1.5', '1.0', '0.5', '0'] }
+  { key: 'stress', label: '反演应力', unit: 'MPa', ticks: ['40', '32', '24', '16', '8', '0'] },
+  { key: 'damage', label: '反演损伤', unit: '%', ticks: ['80', '64', '48', '32', '16', '0'] },
+  { key: 'error', label: '联合误差', unit: '归一值', ticks: ['1.0', '.8', '.6', '.4', '.2', '0'] }
 ]
+const activeMetric = computed(() => metricOptions.find(item => item.key === metric.value) || metricOptions[0])
 
 const views = [
-  { key: 'cloud', label: '整体云图', icon: '◈' },
-  { key: 'section', label: '剖面模式', icon: '◫' },
-  { key: 'iso', label: '等值面', icon: '◎' }
+  { key: 'cloud', label: '时序体云', icon: '▱' },
+  { key: 'section', label: '单切面', icon: '◫' },
+  { key: 'iso', label: '等值点云', icon: '∴' }
 ]
 
-const activeMetric = computed(() => metricOptions.find((item) => item.key === metric.value))
-const confiningPressure = computed(() => (22.8 + progress.value * 0.048).toFixed(1))
-const advance = computed(() => (438.6 + progress.value * 0.017).toFixed(1))
-const stepLabel = computed(() => String(Math.round(progress.value * 1.2)).padStart(3, '0'))
-const clockTime = computed(() => now.value.toLocaleTimeString('zh-CN', { hour12: false }))
-const clockDate = computed(() => now.value.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replaceAll('/', '.'))
+// ---- computed from store ----
+const activeModel = computed(() => store.activeModel)
+const activeModelName = computed(() => activeModel.value?.name_en || '--')
+const selectedBorehole = computed(() => store.activeBorehole)
+const reliefInfo = computed(() => store.ringCloud?.meta?.reliefModel || { available: false })
+const telemetrySampleCount = computed(() => Number(store.ringCloud?.meta?.rawRows || 0))
 
-const loadItems = computed(() => [
-  { icon: 'σ', label: '垂直应力', sub: 'VERTICAL', value: (28.4 + progress.value * .031).toFixed(1), unit: 'MPa', level: 6, tone: 'cyan' },
-  { icon: '↔', label: '水平应力', sub: 'HORIZONTAL', value: (21.6 + progress.value * .024).toFixed(1), unit: 'MPa', level: 5, tone: 'blue' },
-  { icon: '⌁', label: '微震能量', sub: 'MICROSEISMIC', value: (4.2 + progress.value * .068).toFixed(1), unit: 'kJ', level: progress.value > 64 ? 7 : 4, tone: progress.value > 64 ? 'orange' : 'cyan' }
-])
+function formatValue(value, digits = 1) {
+  const number = Number(value)
+  return Number.isFinite(number) ? number.toFixed(digits) : '--'
+}
 
-const trendValues = computed(() => Array.from({ length: 22 }, (_, index) => {
-  const rising = index * (0.9 + progress.value * .008)
-  const ripple = Math.sin(index * .86 + progress.value * .07) * 4.3 + Math.cos(index * .31) * 2.2
-  return 19 + rising + ripple
-}))
+// cloudProgress: evolutionProgress directly drives the 3D scene drilling face
+const cloudProgress = computed(() => evolutionProgress.value)
+
+// ---- drilling KPIs ----
+const drillingKpis = computed(() => {
+  const sample = currentSample.value
+  if (!sample) return [
+    { icon: 'τ', label: '钻进扭矩', sub: 'TORQUE', value: '--', unit: 'N·m', level: 5, tone: 'cyan' },
+    { icon: 'F', label: '钻进推力', sub: 'THRUST', value: '--', unit: 'kN', level: 4, tone: 'blue' },
+    { icon: 'σ', label: '孔内应力', sub: 'STRESS', value: '--', unit: 'MPa', level: 4, tone: 'orange' }
+  ]
+  return [
+    { icon: 'τ', label: '当前扭矩', sub: 'TORQUE / RAW', value: formatValue(sample.torque, 1), unit: 'N·m', level: Math.max(1, Math.min(8, Math.ceil(sample.torque / 15))), tone: 'cyan' },
+    { icon: 'F', label: '当前推力', sub: 'THRUST / RAW', value: formatValue(sample.thrust, 2), unit: 'kN', level: Math.max(1, Math.min(8, Math.ceil(sample.thrust * 1.6))), tone: 'blue' },
+    { icon: 'σ', label: '实测围压', sub: 'GROUND TRUTH', value: sample.actualStress, unit: 'MPa', level: Math.max(1, Math.ceil(sample.actualStress / 5)), tone: sample.actualStress > 25 ? 'orange' : 'cyan' }
+  ]
+})
+
+const trendValues = computed(() => {
+  return telemetrySeries.value.map(row => Number(row.torque))
+})
 
 const trendCoordinates = computed(() => {
   const values = trendValues.value
-  const max = Math.max(...values) * 1.08
-  return values.map((value, index) => ({ x: index / (values.length - 1) * 280, y: 94 - value / max * 82 }))
+  if (!values.length) return []
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const span = Math.max(max - min, 1)
+  return values.map((value, index) => ({
+    x: index / (values.length - 1) * 280,
+    y: 94 - ((value - min) / span) * 82
+  }))
 })
-const trendPoints = computed(() => trendCoordinates.value.map((point) => `${point.x.toFixed(1)},${point.y.toFixed(1)}`).join(' '))
+
+const trendPoints = computed(() => trendCoordinates.value.map(p => `${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' '))
 const trendArea = computed(() => `0,98 ${trendPoints.value} 280,98`)
-const trendLast = computed(() => trendCoordinates.value.at(-1))
+const trendCurrent = computed(() => trendCoordinates.value[telemetryIndex.value] || null)
 
-const zoneRatios = computed(() => {
-  const plastic = Math.round(9 + progress.value * .16)
-  const damage = Math.round(18 + progress.value * .09)
-  return [plastic, damage, 100 - plastic - damage]
+// ---- risk / findings ----
+const findings = computed(() => {
+  if (!store.ringCloud) return ['加载 Vtest4 环形钻孔数据中...']
+  return [
+    `${store.ringCloud.meta.boreholeCount} 组数据已按钻孔映射到垂直巷道轴线的 YZ 环形截面`,
+    `拟合采用 ${store.ringCloud.meta.fittingMethod}，曲线平均粗糙度降低 ${(store.ringCloud.meta.meanRoughnessReduction * 100).toFixed(1)}%`,
+    '径向位置代表 0–125 cm 钻进深度，时间轴逐步揭露已钻区域的状态场',
+    'VTEST_S99 为 10–40 MPa 变应力复合孔，已使用虚线标签单独区分',
+    '数据中未发现显式泄压/卸压字段或模型，未将特殊工况误标为泄压结果'
+  ]
 })
 
-const sensorItems = computed(() => [
-  { id: 'S-01 拱顶', value: (1.12 + progress.value * .013).toFixed(2), unit: 'mm', state: 'normal' },
-  { id: 'S-02 左帮', value: (1.68 + progress.value * .017).toFixed(2), unit: 'mm', state: progress.value > 76 ? 'warn' : 'normal' },
-  { id: 'S-03 右帮', value: (1.44 + progress.value * .012).toFixed(2), unit: 'mm', state: 'normal' },
-  { id: 'S-04 底板', value: (2.16 + progress.value * .024).toFixed(2), unit: 'mm', state: progress.value > 58 ? 'warn' : 'normal' }
-])
+const currentFinding = computed(() => {
+  const list = findings.value
+  return {
+    title: `发现 ${findingIndex.value + 1}`,
+    message: list[findingIndex.value] || list[0]
+  }
+})
 
-const riskScore = computed(() => Math.min(96, Math.round(28 + progress.value * .58)))
 const riskLevel = computed(() => {
-  if (riskScore.value >= 72) return { className: 'danger', title: 'Ⅱ级 · 橙色预警', message: '左帮塑性区加速扩展，建议降低推进速率并复核支护参数。' }
-  if (riskScore.value >= 52) return { className: 'attention', title: 'Ⅲ级 · 黄色关注', message: '局部应力持续积聚，当前仍处于可控演化区间。' }
-  return { className: 'stable', title: 'Ⅳ级 · 状态稳定', message: '围岩响应平稳，各监测量处于正常阈值范围。' }
+  const acc = activeModel.value?.damage_accuracy || 0
+  if (acc >= 0.72) return { className: 'stable', title: '高精度', message: '模型损伤识别准确率超过72%' }
+  if (acc >= 0.69) return { className: 'attention', title: '中等精度', message: '模型损伤识别准确率接近70%' }
+  return { className: 'danger', title: '待提升', message: '模型在低应力条件下精度较高' }
 })
+
+function cycleFinding() {
+  findingIndex.value = (findingIndex.value + 1) % findings.value.length
+}
+
+// ---- clock ----
+const clockTime = computed(() => now.value.toLocaleTimeString('zh-CN', { hour12: false }))
+const clockDate = computed(() => now.value.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replaceAll('/', '.'))
 
 const clockTimer = window.setInterval(() => { now.value = new Date() }, 1000)
-const evolutionTimer = window.setInterval(() => {
-  if (!playing.value) return
-  progress.value = progress.value >= 100 ? 0 : Number((progress.value + .12).toFixed(2))
-}, 120)
+
+onMounted(async () => {
+  await store.loadAll()
+  startEvolution()
+})
 
 onBeforeUnmount(() => {
   window.clearInterval(clockTimer)
-  window.clearInterval(evolutionTimer)
+  stopEvolution()
+  if (findingTimer.value) window.clearInterval(findingTimer.value)
 })
 </script>
 
@@ -311,6 +505,20 @@ onBeforeUnmount(() => {
   background-image: linear-gradient(rgba(82, 181, 229, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(82, 181, 229, .07) 1px, transparent 1px);
   background-size: 42px 42px;
   mask-image: linear-gradient(to bottom, black, transparent 82%);
+}
+
+.digital-twin-screen::after {
+  content: '';
+  position: absolute;
+  z-index: 0;
+  left: 0;
+  right: 0;
+  bottom: 70px;
+  height: 46%;
+  pointer-events: none;
+  opacity: .18;
+  background: url('../../assets/images/bg4.png') center bottom / 100% 100% no-repeat;
+  mix-blend-mode: screen;
 }
 
 .ambient-grid {
@@ -354,7 +562,7 @@ onBeforeUnmount(() => {
 .title-block p i { width: 28px; height: 1px; background: linear-gradient(90deg, transparent, #2eaed8); }
 .title-block p i:last-child { transform: rotate(180deg); }
 .title-block h1 { margin: 0; font-size: clamp(20px, 1.55vw, 29px); font-weight: 600; letter-spacing: 6px; text-shadow: 0 0 18px rgba(85, 219, 255, .36); }
-.title-rule { position: absolute; bottom: -1px; width: 48%; height: 3px; background: linear-gradient(90deg, transparent, rgba(45, 191, 244, .4), transparent); }
+.title-rule { position: absolute; bottom: -7px; width: 58%; height: 15px; opacity: .55; background: url('../../assets/images/bar2.png') center / 100% 100% no-repeat; }
 .title-rule span { display: block; width: 86px; height: 2px; margin: 1px auto 0; background: #6ae9ff; box-shadow: 0 0 12px #28c9ff; }
 
 .system-state { display: flex; align-items: center; justify-content: flex-end; gap: 20px; }
@@ -385,6 +593,7 @@ onBeforeUnmount(() => {
   background: linear-gradient(135deg, rgba(8, 27, 49, .88), rgba(4, 17, 33, .72));
   border: 1px solid var(--line);
   box-shadow: inset 0 0 26px rgba(13, 94, 141, .08), 0 8px 28px rgba(0, 0, 0, .16);
+  backdrop-filter: blur(10px);
 }
 .panel::before, .panel::after { content: ''; position: absolute; width: 18px; height: 1px; background: #3fdcff; top: -1px; }
 .panel::before { left: 0; }.panel::after { right: 0; }
@@ -407,6 +616,12 @@ onBeforeUnmount(() => {
 .overview-grid span { display: block; color: #628ba0; font-size: 9px; }
 .overview-grid strong { color: #dff8ff; font: 16px/1.2 Electronic, monospace; }
 .overview-grid strong small { display: inline; color: #648ba0; font: 8px sans-serif; }
+.relief-status { display: grid; grid-template-columns: 7px auto 1fr; align-items: center; gap: 5px; margin: -3px 12px 8px; padding: 5px 7px; color: #6f91a1; font-size: 7px; background: rgba(15, 38, 54, .32); border: 1px dashed rgba(103, 153, 177, .2); }
+.relief-status i { width: 6px; height: 6px; border-radius: 50%; background: #6f8190; }
+.relief-status strong { justify-self: end; color: #91a7b1; font-size: 8px; font-weight: 500; }
+.relief-status small { grid-column: 2 / 4; color: #4d7183; font-size: 6px; }
+.relief-status.available i { background: #47dda0; box-shadow: 0 0 6px #47dda0; }
+.relief-status.available strong { color: #50dfa5; }
 
 .load-panel { flex: 1.05; }
 .load-kpis { padding: 5px 12px 7px; }
@@ -430,6 +645,7 @@ onBeforeUnmount(() => {
 .chart-head strong { color: #ffb839; font-weight: 400; }
 .trend-chart { display: block; width: calc(100% - 24px); height: calc(100% - 78px); min-height: 72px; margin: 0 12px; overflow: visible; }
 .chart-grid line { stroke: rgba(80, 156, 189, .14); stroke-width: .7; stroke-dasharray: 3 3; }
+.cursor-line { stroke: rgba(255, 181, 54, .65); stroke-width: .8; stroke-dasharray: 3 3; }
 .chart-axis { display: flex; justify-content: space-between; margin: -2px 12px 0; color: #41677b; font-size: 7px; }
 
 .center-stage { min-width: 0; display: flex; flex-direction: column; }
@@ -452,6 +668,7 @@ onBeforeUnmount(() => {
 .legend-title { writing-mode: vertical-rl; display: flex; align-items: center; gap: 5px; color: #aac9d7; font-size: 8px; letter-spacing: 2px; }
 .legend-title small { color: #54778a; font-size: 7px; }
 .legend-scale { border: 1px solid rgba(255,255,255,.18); background: linear-gradient(to bottom, #f12622, #ff9d18 20%, #d8e72a 38%, #29d16d 56%, #04cfd0 70%, #087ef5 84%, #1037e6); box-shadow: 0 0 10px rgba(26, 157, 255, .24); }
+.legend-scale.damage-scale { background: linear-gradient(to bottom, #1037e6, #087ef5 20%, #04cfd0 38%, #29d16d 56%, #d8e72a 70%, #ff9d18 84%, #f12622); }
 .legend-labels { display: flex; flex-direction: column; justify-content: space-between; color: #89aab9; font: 8px Electronic, monospace; }
 .scene-data-strip { position: absolute; z-index: 5; left: 50%; bottom: 12px; display: flex; transform: translateX(-50%); background: rgba(3, 15, 28, .76); border: 1px solid rgba(65, 164, 205, .18); pointer-events: none; }
 .scene-data-strip div { min-width: 82px; padding: 5px 9px; border-right: 1px solid rgba(65, 164, 205, .14); }.scene-data-strip div:last-child { border: 0; }
@@ -460,39 +677,113 @@ onBeforeUnmount(() => {
 .axis-widget i, .axis-widget::before, .axis-widget::after { content: ''; position: absolute; left: 25px; bottom: 18px; width: 27px; height: 1px; transform-origin: left; background: #ff3b38; }
 .axis-widget::before { background: #38ef89; transform: rotate(-90deg); }.axis-widget::after { background: #3e78ff; transform: rotate(-145deg); }
 .axis-widget b { position: absolute; font-size: 8px; }.axis-x { right: -2px; bottom: 13px; color: #ff625f; }.axis-y { left: 20px; top: 1px; color: #48ef98; }.axis-z { left: -1px; bottom: 31px; color: #5f8fff; }
-.scene-controls { display: flex; align-items: center; gap: 12px; height: 42px; padding: 0 8px; border: 1px solid rgba(65, 164, 205, .2); background: rgba(4, 19, 35, .8); }
-.view-switch { display: flex; gap: 3px; }.view-switch button, .rotate-toggle { height: 27px; padding: 0 8px; color: #557f94; font-size: 8px; border: 1px solid rgba(70, 156, 192, .15); background: rgba(20, 58, 81, .24); cursor: pointer; }.view-switch button span { margin-right: 4px; font-size: 10px; }.view-switch button.active, .rotate-toggle.active { color: #bcf3ff; border-color: rgba(62, 206, 244, .44); background: rgba(26, 142, 182, .2); }
-.slice-control { flex: 1; display: flex; align-items: center; gap: 8px; color: #557e92; font-size: 8px; }.slice-control input { flex: 1; accent-color: #36d8ff; height: 3px; }.slice-control em { width: 28px; color: #8ccbdd; font: 8px Electronic, monospace; font-style: normal; }.rotate-toggle { flex: 0 0 auto; }.rotate-toggle i { margin-right: 4px; color: #42dfff; font-size: 12px; font-style: normal; }
+.scene-controls { display: flex; flex-direction: column; gap: 0; border: 1px solid rgba(65, 164, 205, .2); background: rgba(4, 19, 35, .8); }
+.control-row { display: flex; align-items: center; gap: 8px; padding: 3px 8px; }
+.control-row.sub { padding-top: 0; padding-bottom: 4px; border-top: 1px solid rgba(65, 164, 205, .1); }
+.view-switch { display: flex; gap: 3px; }
+.view-switch button { height: 27px; padding: 0 8px; color: #557f94; font-size: 8px; border: 1px solid rgba(70, 156, 192, .15); background: rgba(20, 58, 81, .24); cursor: pointer; }
+.view-switch button span { margin-right: 4px; font-size: 10px; }
+.view-switch button.active { color: #bcf3ff; border-color: rgba(62, 206, 244, .44); background: rgba(26, 142, 182, .2); }
+.model-select-inline { display: flex; gap: 2px; border-left: 1px solid rgba(65, 164, 205, .15); padding-left: 8px; }
+.model-select-inline button { height: 25px; padding: 0 6px; color: #557f94; font: 8px Electronic, monospace; border: 1px solid rgba(70, 156, 192, .12); background: rgba(20, 58, 81, .2); cursor: pointer; }
+.model-select-inline button.active { color: #42d9ff; border-color: #38d8ff; background: rgba(26, 142, 182, .22); }
+.borehole-select-inline { display: flex; flex: 1; gap: 2px; min-width: 0; padding-left: 8px; border-left: 1px solid rgba(65, 164, 205, .15); overflow: hidden; }
+.borehole-select-inline button { flex: 1 1 0; min-width: 22px; height: 25px; padding: 0 2px; color: #557f94; font: 7px Electronic, monospace; border: 1px solid rgba(70, 156, 192, .12); background: rgba(20, 58, 81, .2); cursor: pointer; }
+.borehole-select-inline button:hover, .borehole-select-inline button.active { color: #dff9ff; border-color: #38d8ff; background: rgba(26, 142, 182, .22); }
+.borehole-select-inline button.special { color: #d99b43; border-style: dashed; border-color: rgba(255, 174, 61, .38); }
+.borehole-select-inline button.special.active { color: #ffd07a; border-color: #ffb13d; background: rgba(255, 166, 44, .12); }
+.slice-control { flex: 1; display: flex; align-items: center; gap: 6px; color: #557e92; font-size: 8px; }
+.slice-control input { flex: 1; accent-color: #36d8ff; height: 3px; }
+.slice-control em { width: 24px; color: #8ccbdd; font: 8px Electronic, monospace; font-style: normal; }
+.rotate-toggle { height: 25px; padding: 0 7px; color: #557f94; font-size: 8px; border: 1px solid rgba(70, 156, 192, .15); background: rgba(20, 58, 81, .24); cursor: pointer; }
+.rotate-toggle i { margin-right: 3px; color: #42dfff; font-size: 11px; font-style: normal; }
+.rotate-toggle.active { color: #bcf3ff; border-color: rgba(62, 206, 244, .44); background: rgba(26, 142, 182, .2); }
 
+/* Accuracy gauges */
 .damage-panel { flex: 1.15; }
-.damage-viz { display: flex; align-items: center; padding: 9px 12px 4px; }
-.damage-rings { --evolution: .4; position: relative; width: 112px; height: 112px; flex: 0 0 112px; border-radius: 50%; background: repeating-radial-gradient(circle, transparent 0 8px, rgba(85, 183, 221, .07) 9px 10px); }
-.ring, .tunnel-hole { position: absolute; left: 50%; top: 50%; border-radius: 50%; transform: translate(-50%, -50%); }
-.ring.elastic { width: calc(96px + var(--evolution) * 10px); height: calc(96px + var(--evolution) * 10px); background: rgba(47, 194, 103, .16); border: 9px solid rgba(56, 207, 111, .44); box-shadow: 0 0 12px rgba(44, 214, 108, .18); }
-.ring.damage { width: calc(70px + var(--evolution) * 10px); height: calc(70px + var(--evolution) * 10px); background: rgba(255, 197, 38, .18); border: 10px solid rgba(255, 194, 35, .68); }
-.ring.plastic { width: calc(43px + var(--evolution) * 15px); height: calc(43px + var(--evolution) * 15px); background: rgba(255, 94, 32, .3); border: 8px solid rgba(255, 104, 38, .77); }
-.tunnel-hole { width: 24px; height: 24px; background: #030b15; border: 2px solid #ffca4d; box-shadow: 0 0 10px rgba(255, 144, 34, .6); }
-.scan-line { position: absolute; left: 56px; top: 8px; width: 1px; height: 48px; transform-origin: bottom; background: linear-gradient(to top, #68e6ff, transparent); animation: radarScan 4s linear infinite; }
-@keyframes radarScan { to { transform: rotate(360deg); } }
-.damage-value { flex: 1; padding-left: 12px; }
-.damage-value span { display: block; color: #6891a4; font-size: 9px; }.damage-value strong { display: block; margin-top: 5px; color: #ffbb38; font: 24px Electronic, monospace; text-shadow: 0 0 12px rgba(255, 160, 40, .32); }.damage-value em { color: #6d91a1; font: 9px sans-serif; font-style: normal; }
+.damage-viz { display: flex; align-items: center; justify-content: center; padding: 9px 12px 4px; }
+.accuracy-gauges { display: flex; gap: 14px; justify-content: center; }
+.gauge-ring {
+  --pct: 70;
+  position: relative;
+  width: 72px; height: 72px;
+  border-radius: 50%;
+  display: grid; place-items: center; align-content: center;
+  background: conic-gradient(#3fdcff 0deg, #3fdcff calc(var(--pct) * 3.6deg), rgba(15, 47, 68, .5) calc(var(--pct) * 3.6deg));
+}
+.gauge-ring::before { content: ''; position: absolute; inset: 6px; border-radius: 50%; background: #061426; box-shadow: inset 0 0 16px rgba(55, 217, 255, .08); border: 1px solid rgba(55, 217, 255, .18); }
+.gauge-ring span { position: relative; z-index: 1; font: 13px Electronic, monospace; color: #def7ff; }
+.gauge-ring small { position: relative; z-index: 1; margin-top: 2px; font-size: 7px; color: #60899d; }
+.damage-gauge { --pct: 70; }
+.stress-gauge { --pct: 85; }
+.state-gauge { --pct: 68; }
 .zone-legend { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 0 10px 9px; }
-.zone-legend div { padding: 5px; background: rgba(15, 47, 68, .3); border: 1px solid rgba(62, 139, 170, .12); }.zone-legend i { display: inline-block; width: 6px; height: 6px; margin-right: 4px; }.zone-legend span { color: #7397a7; font-size: 8px; }.zone-legend strong { display: block; margin: 2px 0 0 10px; font: 12px Electronic, monospace; color: #d9f7ff; }.plastic-color { background: #ff6725; }.damage-color { background: #ffc52a; }.elastic-color { background: #36ce74; }
+.zone-legend div { padding: 5px; background: rgba(15, 47, 68, .3); border: 1px solid rgba(62, 139, 170, .12); }
+.zone-legend i { display: inline-block; width: 6px; height: 6px; margin-right: 4px; }
+.zone-legend span { color: #7397a7; font-size: 8px; }
+.zone-legend strong { display: block; margin: 2px 0 0 10px; font: 12px Electronic, monospace; color: #d9f7ff; }
+.plastic-color { background: #ff6725; }.damage-color { background: #ffc52a; }.elastic-color { background: #36ce74; }
 
 .sensor-panel { flex: 1; }
-.sensor-head, .sensor-item { display: grid; grid-template-columns: 1.4fr .8fr .55fr; align-items: center; column-gap: 5px; padding: 0 12px; }
-.sensor-head { height: 25px; color: #426d82; font-size: 7px; border-bottom: 1px solid rgba(68, 147, 180, .12); }.sensor-head span:nth-child(n+2) { text-align: right; }
-.sensor-item { height: calc((100% - 66px) / 4); min-height: 25px; color: #89adbd; font-size: 8px; border-bottom: 1px solid rgba(68, 147, 180, .08); }.sensor-item > span { display: flex; align-items: center; gap: 5px; }.sensor-item > span i { width: 5px; height: 5px; border-radius: 50%; background: #48e59d; box-shadow: 0 0 5px #48e59d; }.sensor-item > span i.warn { background: #ffac32; box-shadow: 0 0 5px #ffac32; }.sensor-item strong { text-align: right; color: #d9f6ff; font: 11px Electronic, monospace; }.sensor-item strong small { margin-left: 2px; color: #52798c; font: 7px sans-serif; }.sensor-item em { justify-self: end; padding: 2px 4px; color: #4bdc9c; background: rgba(49, 219, 146, .08); font-size: 7px; font-style: normal; }.sensor-item em.warn { color: #ffb33a; background: rgba(255, 171, 48, .1); }
+.sensor-head, .sensor-item { display: grid; grid-template-columns: 1.2fr .55fr .55fr; align-items: center; column-gap: 5px; padding: 0 12px; }
+.sensor-head { height: 25px; color: #426d82; font-size: 7px; border-bottom: 1px solid rgba(68, 147, 180, .12); }
+.sensor-head span:nth-child(n+2) { text-align: right; }
+.sensor-item { height: calc((100% - 66px) / 3); min-height: 32px; color: #89adbd; font-size: 8px; border-bottom: 1px solid rgba(68, 147, 180, .08); cursor: pointer; transition: background .2s; }
+.sensor-item:hover, .sensor-item.active { background: rgba(28, 150, 194, .12); }
+.sensor-item > span { display: flex; align-items: center; gap: 5px; }
+.sensor-item > span i { width: 5px; height: 5px; border-radius: 50%; background: #2c5d78; box-shadow: none; }
+.sensor-item > span i.active { background: #48e59d; box-shadow: 0 0 5px #48e59d; }
+.sensor-item strong { text-align: right; color: #d9f6ff; font: 11px Electronic, monospace; }
+.sensor-item em { justify-self: end; padding: 2px 4px; font-size: 7px; font-style: normal; }
+.sensor-item em.good { color: #4bdc9c; background: rgba(49, 219, 146, .08); }
+.sensor-item em.normal { color: #ffb33a; background: rgba(255, 171, 48, .1); }
 
-.warning-panel { flex: .68; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-color: rgba(255, 184, 48, .25); background: linear-gradient(100deg, rgba(66, 42, 12, .44), rgba(12, 23, 35, .72)); }.warning-panel::before, .warning-panel::after { background: #ffb536; }
-.warning-signal { position: relative; display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 42px; }.warning-signal span { position: absolute; inset: 0; border-radius: 50%; border: 1px solid rgba(255, 182, 46, .4); animation: signalPulse 1.8s infinite; }.warning-signal i { display: grid; place-items: center; width: 26px; height: 26px; color: #151007; font: 700 17px sans-serif; font-style: normal; clip-path: polygon(50% 0, 100% 100%, 0 100%); background: #ffb533; padding-top: 5px; }.warning-copy { flex: 1; min-width: 0; }.warning-copy small { display: block; color: #815f2a; font-size: 6px; letter-spacing: 1px; }.warning-copy strong { color: #ffc14a; font-size: 11px; }.warning-copy p { margin: 3px 0 0; color: #846f51; font-size: 7px; line-height: 1.4; }.risk-score { text-align: center; }.risk-score strong { display: block; color: #ffc14a; font: 22px Electronic, monospace; }.risk-score span { color: #7b6441; font-size: 7px; }.warning-panel.stable { border-color: rgba(52, 220, 145, .25); }.warning-panel.stable::before, .warning-panel.stable::after { background: #3cdd97; }.warning-panel.stable .warning-signal i { background: #3cdd97; }.warning-panel.stable .warning-copy strong, .warning-panel.stable .risk-score strong { color: #53e4a5; }.warning-panel.danger { animation: warnGlow 2s ease-in-out infinite; }
-@keyframes signalPulse { 70%, 100% { inset: -9px; opacity: 0; } } @keyframes warnGlow { 50% { box-shadow: inset 0 0 25px rgba(255, 121, 28, .1), 0 0 12px rgba(255, 121, 28, .08); } }
+.warning-panel { flex: .68; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-color: rgba(255, 184, 48, .25); background: linear-gradient(100deg, rgba(66, 42, 12, .44), rgba(12, 23, 35, .72)); }
+.warning-panel::before, .warning-panel::after { background: #ffb536; }
+.warning-signal { position: relative; display: grid; place-items: center; width: 42px; height: 42px; flex: 0 0 42px; }
+.warning-signal span { position: absolute; inset: 0; border-radius: 50%; border: 1px solid rgba(255, 182, 46, .4); animation: signalPulse 1.8s infinite; }
+.warning-signal i { display: grid; place-items: center; width: 26px; height: 26px; color: #151007; font: 700 17px sans-serif; font-style: normal; clip-path: polygon(50% 0, 100% 100%, 0 100%); background: #ffb533; padding-top: 5px; }
+.warning-copy { flex: 1; min-width: 0; }
+.warning-copy small { display: block; color: #815f2a; font-size: 6px; letter-spacing: 1px; }
+.warning-copy strong { color: #ffc14a; font-size: 11px; }
+.warning-copy p { margin: 3px 0 0; color: #846f51; font-size: 7px; line-height: 1.4; }
+.risk-score { text-align: center; }
+.risk-score strong { display: block; color: #ffc14a; font: 22px Electronic, monospace; }
+.risk-score span { color: #7b6441; font-size: 7px; }
+.warning-panel.stable { border-color: rgba(52, 220, 145, .25); background: linear-gradient(100deg, rgba(14, 52, 32, .44), rgba(12, 23, 35, .72)); }
+.warning-panel.stable::before, .warning-panel.stable::after { background: #3cdd97; }
+.warning-panel.stable .warning-signal i { background: #3cdd97; }
+.warning-panel.stable .warning-copy strong, .warning-panel.stable .risk-score strong { color: #53e4a5; }
+.warning-panel.danger { animation: warnGlow 2s ease-in-out infinite; }
+@keyframes signalPulse { 70%, 100% { inset: -9px; opacity: 0; } }
+@keyframes warnGlow { 50% { box-shadow: inset 0 0 25px rgba(255, 121, 28, .1), 0 0 12px rgba(255, 121, 28, .08); } }
 
-.evolution-footer { position: relative; z-index: 5; display: grid; grid-template-columns: 225px 1fr 150px; align-items: center; gap: 16px; height: 90px; padding: 6px 25px 8px; background: linear-gradient(180deg, rgba(4, 18, 33, .78), rgba(3, 12, 24, .98)); border-top: 1px solid rgba(61, 177, 221, .23); }
+/* Footer: Evolution timeline */
+.evolution-footer { position: relative; z-index: 5; display: grid; grid-template-columns: 220px 1fr 150px; align-items: center; gap: 16px; height: 90px; padding: 6px 25px 8px; background: linear-gradient(180deg, rgba(4, 18, 33, .78), rgba(3, 12, 24, .98)); border-top: 1px solid rgba(61, 177, 221, .23); }
 .evolution-footer::before { content: ''; position: absolute; left: 25%; right: 25%; top: -1px; height: 2px; background: linear-gradient(90deg, transparent, #3bdcff, transparent); }
-.evolution-title { display: flex; align-items: center; gap: 11px; }.play-button { display: grid; place-items: center; width: 42px; height: 42px; color: #b9f2ff; background: rgba(30, 148, 191, .14); border: 1px solid rgba(58, 213, 249, .5); clip-path: polygon(10% 0, 90% 0, 100% 20%, 100% 80%, 90% 100%, 10% 100%, 0 80%, 0 20%); cursor: pointer; }.play-button:hover { background: rgba(37, 185, 229, .28); }.play-button span { font-size: 13px; }.evolution-title strong { display: block; font-size: 13px; letter-spacing: 2px; }.evolution-title small { color: #3e6c82; font-size: 7px; letter-spacing: 1px; }
-.timeline-wrap { position: relative; padding: 0 8px; }.timeline-labels, .timeline-time { display: flex; justify-content: space-between; color: #7699a9; font-size: 8px; }.timeline-time { color: #355d71; font: 7px Electronic, monospace; }.evolution-range { position: relative; z-index: 2; display: block; width: 100%; height: 3px; margin: 10px 0 8px; accent-color: #3cddff; cursor: pointer; }.timeline-points { position: absolute; z-index: 1; left: 10px; right: 10px; top: 28px; display: flex; justify-content: space-between; pointer-events: none; }.timeline-points i { width: 9px; height: 9px; border-radius: 50%; background: #102c40; border: 1px solid #2c708d; }.timeline-points i.passed { background: #50dcff; border-color: #8aeaff; box-shadow: 0 0 8px rgba(61, 220, 255, .75); }
-.progress-readout { padding-left: 17px; border-left: 1px solid rgba(67, 147, 181, .2); }.progress-readout span { display: block; color: #567e91; font-size: 8px; }.progress-readout strong { display: block; color: #7beaff; font: 25px Electronic, monospace; text-shadow: 0 0 12px rgba(71, 220, 255, .35); }.progress-readout strong em { margin-left: 3px; font-size: 10px; font-style: normal; }.progress-readout small { color: #375e71; font: 7px Electronic, monospace; }
+.evolution-title { display: flex; align-items: center; gap: 11px; }
+.play-button { display: flex; align-items: center; justify-content: center; gap: 7px; width: 86px; height: 42px; color: #b9f2ff; background: rgba(30, 148, 191, .14); border: 1px solid rgba(58, 213, 249, .5); clip-path: polygon(7% 0, 93% 0, 100% 20%, 100% 80%, 93% 100%, 7% 100%, 0 80%, 0 20%); cursor: pointer; }
+.play-button:hover { background: rgba(37, 185, 229, .28); }
+.play-button span { font-size: 13px; }
+.play-button em { font-size: 8px; font-style: normal; letter-spacing: .5px; white-space: nowrap; }
+.evolution-title strong { display: block; font-size: 13px; letter-spacing: 2px; }
+.evolution-title small { color: #3e6c82; font-size: 7px; letter-spacing: 1px; }
+.timeline-wrap { position: relative; padding: 0 8px; }
+.timeline-labels { display: flex; justify-content: space-between; color: #7796a6; font-size: 10px; font-weight: 600; padding: 0 4px; }
+.evolution-range { position: relative; z-index: 2; display: block; width: 100%; height: 4px; margin: 8px 0 6px; accent-color: #ffb536; cursor: pointer; }
+.timeline-points { position: absolute; z-index: 1; left: 12px; right: 12px; top: 25px; display: flex; justify-content: space-between; pointer-events: none; }
+.timeline-points i { width: 9px; height: 9px; border-radius: 50%; background: #102c40; border: 1px solid #2c708d; }
+.timeline-points i.passed { background: #ffb536; border-color: #ffd480; box-shadow: 0 0 8px rgba(255, 181, 54, .75); }
+.timeline-sub { display: flex; justify-content: space-between; align-items: center; padding: 0 4px; color: #41677b; font-size: 8px; }
+.speed-control { display: flex; align-items: center; gap: 4px; }
+.speed-control button { appearance: none; padding: 1px 6px; color: #557e92; font-size: 7px; background: rgba(20, 58, 81, .2); border: 1px solid rgba(70, 156, 192, .12); cursor: pointer; }
+.speed-control button.active { color: #ffb536; border-color: #ffb536; }
+.progress-readout { padding-left: 17px; border-left: 1px solid rgba(67, 147, 181, .2); }
+.progress-readout span { display: block; color: #567e91; font-size: 8px; }
+.progress-readout strong { display: block; color: #ffb536; font: 25px Electronic, monospace; text-shadow: 0 0 12px rgba(255, 181, 54, .35); }
+.progress-readout strong em { margin-left: 3px; font-size: 10px; font-style: normal; }
+.progress-readout small { color: #375e71; font: 7px Electronic, monospace; }
+.data-provenance { position: absolute; left: 50%; bottom: 3px; max-width: 55%; overflow: hidden; transform: translateX(-50%); color: rgba(75, 130, 153, .58); font: 6px/1 Electronic, monospace; letter-spacing: .8px; white-space: nowrap; text-overflow: ellipsis; }
 
 @media (max-height: 820px) {
   .top-header { height: 64px; }
@@ -502,7 +793,368 @@ onBeforeUnmount(() => {
   .project-name { margin-top: 6px; margin-bottom: 5px; }
   .overview-grid div { padding-top: 3px; padding-bottom: 3px; }
   .load-row { padding: 3px 0; }
-  .damage-rings { transform: scale(.88); margin: -6px; }
+  .gauge-ring { transform: scale(.88); }
   .zone-legend div { padding: 3px; }
+}
+</style>
+
+<style scoped lang="scss">
+/* “随钻智控”科研仪器主题：沿用项目点阵与结构条素材，统一克制的蓝灰 / 金色语义。 */
+.digital-twin-screen,
+.digital-twin-screen * { box-sizing: border-box; }
+
+.digital-twin-screen {
+  --cyan: #72d5e7;
+  --cyan-soft: #b8edf4;
+  --gold: #e3b85a;
+  --paper: #dce8eb;
+  --muted: #78909a;
+  --panel: rgba(7, 18, 26, .82);
+  --line: rgba(132, 164, 175, .19);
+  min-width: 1024px;
+  min-height: 720px;
+  color: var(--paper);
+  background:
+    linear-gradient(180deg, rgba(5, 13, 19, .18), rgba(3, 10, 15, .76)),
+    radial-gradient(circle at 52% 38%, rgba(35, 103, 121, .2), transparent 42%),
+    #050d13;
+}
+
+.digital-twin-screen::before {
+  opacity: .18;
+  background-image:
+    linear-gradient(rgba(128, 164, 176, .045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(128, 164, 176, .045) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.digital-twin-screen::after {
+  bottom: 86px;
+  height: 64%;
+  opacity: .24;
+  background-size: cover;
+  mix-blend-mode: screen;
+}
+
+.ambient-grid { background: rgba(52, 135, 153, .09); filter: blur(82px); }
+
+.top-header {
+  grid-template-columns: minmax(220px, .9fr) minmax(540px, 2.7fr) minmax(220px, .9fr);
+  height: 92px;
+  padding: 0 26px;
+  background: linear-gradient(180deg, rgba(5, 14, 21, .98), rgba(5, 14, 21, .86) 80%, rgba(5, 14, 21, .32));
+  border-bottom-color: rgba(137, 170, 181, .16);
+}
+
+.system-brand,
+.system-state,
+.title-block { min-width: 0; }
+
+.brand-mark { width: 36px; height: 34px; opacity: .9; }
+.brand-mark span { border-color: #8bd7e4; box-shadow: none; }
+.system-brand strong { color: #e4edef; font-size: 17px; letter-spacing: 5px; }
+.system-brand small {
+  display: block;
+  max-width: 190px;
+  overflow: hidden;
+  color: #6f8791;
+  font-size: 7px;
+  letter-spacing: 1.7px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.title-block { position: relative; justify-content: center; gap: 2px; }
+.title-block p { margin: 0; color: #6b8994; font-size: 7px; letter-spacing: 2.8px; }
+.title-block p i { background: linear-gradient(90deg, transparent, #709ca8); }
+.title-block h1 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 13px;
+  width: 100%;
+  margin: 0;
+  color: #eef4f5;
+  font-size: clamp(23px, 1.5vw, 29px);
+  font-weight: 600;
+  letter-spacing: 5px;
+  line-height: 1.35;
+  text-shadow: 0 4px 22px rgba(51, 129, 146, .2);
+  white-space: nowrap;
+}
+.title-block h1 span { flex: 0 0 auto; }
+.title-block h1 small {
+  min-width: 0;
+  overflow: hidden;
+  padding-left: 13px;
+  color: #91a5ac;
+  font-size: clamp(9px, .57vw, 11px);
+  font-weight: 400;
+  letter-spacing: 1.1px;
+  border-left: 1px solid rgba(227, 184, 90, .55);
+  text-overflow: ellipsis;
+}
+.title-rule { bottom: -8px; width: 72%; height: 13px; opacity: .24; }
+.title-rule span { width: 72px; height: 1px; background: var(--gold); box-shadow: 0 0 9px rgba(227, 184, 90, .35); }
+
+.system-state { gap: 16px; }
+.clock { padding-right: 15px; }
+.clock strong { color: #e0e9eb; font-size: 16px; }
+.clock small { color: #6d828b; }
+.online { min-width: 0; color: #b8c9ce; font-size: 9px; }
+.online i { width: 7px; height: 7px; background: #76cba8; box-shadow: 0 0 0 4px rgba(118, 203, 168, .08); }
+.online small { display: inline-block; max-width: 150px; overflow: hidden; color: #637c86; white-space: nowrap; text-overflow: ellipsis; }
+
+.dashboard-body {
+  grid-template-columns: clamp(272px, 18.7vw, 356px) minmax(0, 1fr) clamp(272px, 18.7vw, 356px);
+  gap: 14px;
+  height: calc(100vh - 182px);
+  min-height: 538px;
+  padding: 11px 18px 8px;
+}
+.side-column { gap: 11px; min-width: 0; }
+
+.panel {
+  border-color: var(--line);
+  background:
+    linear-gradient(110deg, rgba(113, 151, 163, .035), transparent 35%),
+    linear-gradient(145deg, rgba(8, 22, 31, .9), rgba(5, 15, 22, .76));
+  box-shadow: inset 2px 0 rgba(227, 184, 90, .12), 0 14px 36px rgba(0, 0, 0, .16);
+  backdrop-filter: blur(16px);
+}
+.panel::before,
+.panel::after { width: 24px; background: #819ba4; opacity: .48; }
+.panel-title {
+  display: grid;
+  grid-template-columns: 31px minmax(0, auto) minmax(16px, 1fr);
+  gap: 10px;
+  height: 47px;
+  padding: 0 13px;
+  background: linear-gradient(90deg, rgba(118, 154, 166, .08), transparent 74%);
+  border-bottom-color: rgba(129, 160, 171, .1);
+}
+.panel-title > span {
+  width: 31px;
+  height: 23px;
+  margin: 0;
+  color: var(--gold);
+  font-size: 9px;
+  background: rgba(227, 184, 90, .055);
+  border-color: rgba(227, 184, 90, .3);
+  transform: none;
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+}
+.panel-title div { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 1px; }
+.panel-title strong,
+.panel-title small { display: block; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.panel-title strong { color: #dce6e8; font-size: 12px; letter-spacing: 1.4px; line-height: 1.25; }
+.panel-title small { color: #637b85; font-size: 6px; letter-spacing: 1.6px; }
+.panel-title > i { width: 100%; margin: 0; background: linear-gradient(90deg, rgba(123, 155, 166, .3), transparent); }
+
+/* PanelTitle 是局部渲染组件，其内部节点需要穿透父组件的 scoped 边界。 */
+:deep(.panel-title > span) {
+  display: grid;
+  place-items: center;
+  width: 31px;
+  height: 23px;
+  margin: 0;
+  color: var(--gold);
+  font: 9px Electronic, monospace;
+  background: rgba(227, 184, 90, .055);
+  border: 1px solid rgba(227, 184, 90, .3);
+  transform: none;
+  clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));
+}
+:deep(.panel-title > div) { display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 1px; }
+:deep(.panel-title strong),
+:deep(.panel-title small) { display: block; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+:deep(.panel-title strong) { color: #dce6e8; font-size: 12px; font-weight: 600; letter-spacing: 1.4px; line-height: 1.25; }
+:deep(.panel-title small) { color: #637b85; font-size: 6px; letter-spacing: 1.6px; }
+:deep(.panel-title > i) { width: 100%; height: 1px; margin: 0; background: linear-gradient(90deg, rgba(123, 155, 166, .3), transparent); }
+
+.project-name { margin: 11px 13px 9px; }
+.project-icon { width: 36px; height: 36px; flex: 0 0 36px; color: #9ed8e2; background: rgba(105, 159, 173, .07); border-color: rgba(119, 171, 184, .24); }
+.project-name strong { color: #dae5e8; font-size: 11px; }
+.project-name small { display: block; overflow: hidden; color: #69838e; white-space: nowrap; text-overflow: ellipsis; }
+.project-name em { flex: 0 0 auto; color: var(--gold); font-size: 8px; white-space: nowrap; background: rgba(227, 184, 90, .06); border-color: rgba(227, 184, 90, .22); }
+.overview-grid { margin-inline: 13px; border-color: rgba(121, 155, 166, .1); }
+.overview-grid div { padding: 6px 9px; border-color: rgba(121, 155, 166, .1); }
+.overview-grid span { color: #718993; }
+.overview-grid strong { color: #e2ebed; }
+.relief-status { margin-inline: 13px; grid-template-columns: 7px auto minmax(0, 1fr); }
+.relief-status strong,
+.relief-status small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+.load-kpis { padding-inline: 13px; }
+.load-row { min-width: 0; border-color: rgba(119, 153, 165, .09); }
+.kpi-icon { color: #8bd8e5; background: rgba(98, 160, 175, .07); border-color: #6fb7c6; }
+.kpi-icon.blue { color: #8dafcc; border-color: #668dae; background: rgba(83, 112, 144, .08); }
+.kpi-icon.orange { color: var(--gold); border-color: #c69d4e; background: rgba(198, 157, 78, .08); }
+.kpi-data > span { overflow: hidden; color: #758f99; white-space: nowrap; text-overflow: ellipsis; }
+.kpi-data > span small { color: #536d77; }
+.kpi-data strong { color: #e1e9eb; }
+.mini-bars i.on { background: #76c4d3; box-shadow: none; }
+
+.chart-head { gap: 8px; }
+.chart-head span,
+.chart-head strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.chart-head span { flex: 1; min-width: 0; }
+.chart-head strong { flex: 0 0 auto; color: var(--gold); }
+
+.scene-heading {
+  height: 45px;
+  padding-inline: 13px 9px;
+  background: linear-gradient(90deg, rgba(113, 151, 163, .09), rgba(5, 15, 22, .28));
+  border-color: var(--line);
+}
+.scene-heading > div { min-width: 0; }
+.live-dot { background: #77c9a9; box-shadow: 0 0 7px rgba(119, 201, 169, .7); }
+.scene-heading p { overflow: hidden; color: #d6e1e4; white-space: nowrap; text-overflow: ellipsis; }
+.scene-heading p small { color: #677f89; }
+.metric-tabs { flex: 0 0 auto; }
+.metric-tabs button,
+.view-switch button,
+.model-select-inline button,
+.borehole-select-inline button,
+.follow-toggle,
+.rotate-toggle,
+.speed-control button {
+  border-color: rgba(126, 159, 171, .16);
+  color: #708a95;
+  background: rgba(98, 132, 144, .055);
+  font-family: inherit;
+}
+.metric-tabs button:hover,
+.metric-tabs button.active,
+.view-switch button.active,
+.model-select-inline button.active,
+.borehole-select-inline button:hover,
+.borehole-select-inline button.active,
+.follow-toggle.active,
+.rotate-toggle.active {
+  color: #d8e8eb;
+  border-color: rgba(113, 202, 218, .52);
+  background: rgba(84, 151, 165, .13);
+  box-shadow: inset 0 -1px #72cadb;
+}
+
+.scene-frame {
+  background:
+    radial-gradient(circle at 52% 49%, rgba(38, 93, 105, .14), rgba(4, 12, 18, .64) 68%),
+    linear-gradient(rgba(115, 151, 163, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(115, 151, 163, .035) 1px, transparent 1px);
+  background-size: auto, 32px 32px, 32px 32px;
+  border-color: var(--line);
+}
+.scene-frame .corner { width: 18px; height: 18px; opacity: .62; }
+.corner.tl, .corner.tr, .corner.bl, .corner.br { border-color: #879ea6; }
+.model-tag { max-width: 160px; overflow: hidden; color: #7e969f; white-space: nowrap; text-overflow: ellipsis; background: rgba(5, 15, 21, .74); border-color: rgba(130, 161, 171, .18); }
+.model-tag span { color: #dbe5e7; }
+.model-tag i { flex: 0 0 14px; background: #78bcc9; }
+.tag-face span { color: var(--gold); }
+.tag-face i { background: var(--gold); }
+.cloud-legend { right: 15px; height: 178px; background: rgba(5, 15, 21, .72); border-color: rgba(130, 161, 171, .18); }
+.legend-scale,
+.legend-scale.damage-scale { background: linear-gradient(to bottom, #f2c14e, #c0b46c 18%, #7aafa0 39%, #3a98a0 58%, #1d7494 74%, #174c73 87%, #102a43); box-shadow: none; }
+.scene-data-strip { max-width: calc(100% - 150px); background: rgba(5, 15, 21, .82); border-color: rgba(130, 161, 171, .18); }
+.scene-data-strip div { min-width: 0; border-color: rgba(130, 161, 171, .12); }
+.scene-data-strip span,
+.scene-data-strip strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.scene-data-strip strong { color: #b8dce3; }
+
+.scene-controls { border-color: var(--line); background: rgba(6, 17, 24, .88); }
+.control-row { min-width: 0; padding: 4px 8px; }
+.control-row.sub { min-height: 31px; border-color: rgba(126, 159, 171, .1); }
+.view-switch,
+.model-select-inline { flex: 0 0 auto; }
+.borehole-select-inline button { min-width: 18px; }
+.slice-control { min-width: 0; color: #718994; }
+.slice-control span { flex: 0 0 auto; }
+.slice-control input { min-width: 80px; }
+.slice-control em { width: 54px; flex: 0 0 54px; color: #a8cad1; text-align: right; }
+.follow-toggle,
+.rotate-toggle { height: 25px; flex: 0 0 auto; padding: 0 8px; cursor: pointer; font-size: 8px; }
+
+.gauge-ring { width: 68px; height: 68px; background: conic-gradient(#78c3d0 0deg, #78c3d0 calc(var(--pct) * 3.6deg), rgba(35, 56, 65, .58) calc(var(--pct) * 3.6deg)); }
+.gauge-ring::before { background: #09171f; border-color: rgba(121, 164, 176, .16); box-shadow: none; }
+.gauge-ring span { color: #e1eaec; }
+.zone-legend { min-width: 0; }
+.zone-legend div { min-width: 0; background: rgba(93, 126, 138, .05); border-color: rgba(126, 159, 171, .1); }
+.zone-legend span,
+.zone-legend strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.plastic-color { background: #d6ad58; }
+.damage-color { background: #72bdca; }
+.elastic-color { background: #72b59b; }
+.sensor-head,
+.sensor-item { min-width: 0; }
+.sensor-item > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.warning-panel { border-color: rgba(227, 184, 90, .22); background: linear-gradient(100deg, rgba(75, 57, 25, .32), rgba(9, 20, 27, .78)); }
+.warning-panel::before,
+.warning-panel::after { background: var(--gold); }
+.warning-copy strong,
+.warning-copy p { overflow: hidden; }
+.warning-copy strong { display: block; white-space: nowrap; text-overflow: ellipsis; }
+.warning-copy p { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; color: #91836a; }
+
+.evolution-footer {
+  grid-template-columns: 230px minmax(0, 1fr) 165px;
+  gap: 18px;
+  height: 90px;
+  padding: 7px 26px 9px;
+  background: linear-gradient(180deg, rgba(7, 18, 25, .86), rgba(4, 12, 18, .98));
+  border-color: rgba(131, 164, 175, .2);
+}
+.evolution-footer::before { background: linear-gradient(90deg, transparent, var(--gold), transparent); opacity: .64; }
+.play-button { width: 86px; height: 42px; color: #e5ecee; background: rgba(95, 138, 150, .08); border-color: rgba(126, 192, 205, .4); }
+.play-button:hover { background: rgba(102, 163, 176, .14); }
+.play-button.paused { color: #f1d189; border-color: rgba(227, 184, 90, .55); background: rgba(227, 184, 90, .08); }
+.evolution-title strong { color: #dbe5e7; }
+.evolution-title small { color: #667f89; }
+.timeline-labels { color: #80959d; }
+.evolution-range { accent-color: var(--gold); }
+.timeline-points i { background: #152932; border-color: #567480; }
+.timeline-points i.passed { background: var(--gold); border-color: #f0d18b; box-shadow: 0 0 7px rgba(227, 184, 90, .55); }
+.timeline-sub { min-width: 0; }
+.timeline-sub > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.timeline-sub > span:first-child { flex: 1; }
+.timeline-sub > span:last-child { flex: 0 0 auto; }
+.speed-control { flex: 0 0 auto; }
+.speed-control button.active { color: var(--gold); border-color: rgba(227, 184, 90, .6); }
+.progress-readout { min-width: 0; }
+.progress-readout strong { color: var(--gold); text-shadow: 0 0 10px rgba(227, 184, 90, .22); }
+.progress-readout small { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+@media (max-width: 1500px) {
+  .top-header { grid-template-columns: 210px minmax(0, 1fr) 215px; padding-inline: 18px; }
+  .title-block h1 { gap: 9px; letter-spacing: 3px; }
+  .title-block h1 small { padding-left: 9px; font-size: 9px; }
+  .dashboard-body { gap: 10px; padding-inline: 12px; }
+  .panel-title { padding-inline: 10px; }
+  .accuracy-gauges { gap: 6px; }
+  .scene-data-strip { max-width: calc(100% - 125px); }
+}
+
+@media (max-height: 920px) {
+  .top-header { height: 80px; }
+  .dashboard-body { height: calc(100vh - 158px); min-height: 562px; padding-top: 8px; }
+  .evolution-footer { height: 78px; }
+  .panel-title { height: 40px; }
+  .project-name { margin-top: 7px; margin-bottom: 6px; }
+  .overview-grid div { padding-top: 4px; padding-bottom: 4px; }
+  .load-row { padding-block: 3px; }
+  .damage-viz { padding-top: 4px; }
+  .gauge-ring { width: 62px; height: 62px; }
+  .scene-heading { height: 40px; }
+  .cloud-legend { height: 154px; }
+}
+
+@media (max-width: 1220px) {
+  .system-brand small,
+  .online small,
+  .scene-heading p small { display: none; }
+  .title-block h1 small { max-width: 360px; }
+  .dashboard-body { grid-template-columns: 272px minmax(0, 1fr) 272px; }
+  .metric-tabs button { padding-inline: 7px; }
+  .scene-data-strip div:nth-child(3) { display: none; }
 }
 </style>

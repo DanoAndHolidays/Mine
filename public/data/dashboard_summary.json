@@ -1,0 +1,87 @@
+{
+  "dataset": {
+    "name": "随钻参数处理与状态反演数据集",
+    "total_experiments": 75,
+    "original_experiments": 25,
+    "synthetic_experiments": 50,
+    "total_points": 112575,
+    "points_per_experiment": 1501,
+    "depth_range_cm": [0, 25],
+    "damage_levels": [0, 20, 40, 60, 80],
+    "stress_levels_mpa": [0, 10, 20, 30, 40],
+    "state_classes": 25
+  },
+  "models": [
+    {
+      "id": "v1",
+      "name": "V1 多尺度ExtraTrees",
+      "name_en": "Multi-scale ExtraTrees",
+      "type": "传统机器学习",
+      "features": "80维物理统计特征",
+      "damage_accuracy": 0.727,
+      "stress_accuracy": 0.852,
+      "state_accuracy": 0.679,
+      "macro_f1": 0.680,
+      "confidence": null
+    },
+    {
+      "id": "v2",
+      "name": "V2 CNN-BiLSTM",
+      "name_en": "CNN-BiLSTM Sequence",
+      "type": "深度学习",
+      "features": "100点序列窗口",
+      "damage_accuracy": 0.688,
+      "stress_accuracy": 0.792,
+      "state_accuracy": 0.682,
+      "macro_f1": 0.666,
+      "confidence": 0.754
+    },
+    {
+      "id": "v3",
+      "name": "V3 物理融合CNN-BiLSTM",
+      "name_en": "Physics Fusion CNN-BiLSTM",
+      "type": "物理融合深度学习",
+      "features": "序列+80维物理特征",
+      "damage_accuracy": 0.712,
+      "stress_accuracy": 0.826,
+      "state_accuracy": 0.693,
+      "macro_f1": 0.684,
+      "confidence": 0.932
+    }
+  ],
+  "experiment_stats": {
+    "by_damage": [
+      {"damage": 0, "torque_mean": 57.2, "torque_std": 29.1, "thrust_mean": 2.98, "thrust_std": 0.87},
+      {"damage": 20, "torque_mean": 52.8, "torque_std": 23.0, "thrust_mean": 2.95, "thrust_std": 0.84},
+      {"damage": 40, "torque_mean": 50.3, "torque_std": 21.8, "thrust_mean": 2.63, "thrust_std": 0.68},
+      {"damage": 60, "torque_mean": 46.8, "torque_std": 22.5, "thrust_mean": 2.33, "thrust_std": 0.56},
+      {"damage": 80, "torque_mean": 34.2, "torque_std": 19.1, "thrust_mean": 2.10, "thrust_std": 0.56}
+    ],
+    "by_stress": [
+      {"stress": 0, "torque_mean": 24.8, "torque_std": 12.3, "thrust_mean": 1.99, "thrust_std": 0.27},
+      {"stress": 10, "torque_mean": 32.4, "torque_std": 19.6, "thrust_mean": 2.17, "thrust_std": 0.29},
+      {"stress": 20, "torque_mean": 40.5, "torque_std": 19.1, "thrust_mean": 2.52, "thrust_std": 0.32},
+      {"stress": 30, "torque_mean": 53.2, "torque_std": 20.5, "thrust_mean": 3.06, "thrust_std": 0.40},
+      {"stress": 40, "torque_mean": 86.0, "torque_std": 24.1, "thrust_mean": 3.95, "thrust_std": 0.57}
+    ]
+  },
+  "vtest_summary": {
+    "total_csv_files": 10,
+    "points_per_file": 7505,
+    "segments_per_file": 5,
+    "stress_levels": [0, 10, 20, 30, 40],
+    "damage_sequence": [80, 60, 40, 20, 0],
+    "best_model": "V3 物理融合CNN-BiLSTM",
+    "best_damage_acc": 0.919,
+    "best_stress_acc": 0.987,
+    "best_file": "VTEST_S00 (V1) / VTEST_S40 (V1)"
+  },
+  "key_findings": [
+    "围压应力越高，钻进扭矩和推力越大",
+    "煤体损伤越严重，钻进扭矩和推力越低",
+    "应力分类准确率(85.2%)显著高于损伤分类(72.7%)",
+    "物理融合模型(V3)综合性能最优，置信度达93.2%",
+    "低应力(0-10MPa)条件下损伤识别精度最高",
+    "拼接钻孔测试验证了模型的跨条件泛化能力"
+  ]
+}

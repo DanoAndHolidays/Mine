@@ -12,6 +12,31 @@ dist
 dist-ssr
 *.local
 
+# Local research data and generated deliverables
+*.doc
+*.docx
+*.zip
+*.rar
+*.7z
+随钻参数处理与状态反演prj/
+新第*章*.md
+
+# Generated QA images, snapshots, and data-build helpers
+screenshots/
+scripts/
+screenshot-*.png
+architecture_diagram.png
+dashboard-full.png
+_font_test.png
+page-snapshot.txt
+snap-main.txt
+public/data/VTEST_*.csv
+
+# Package-manager artifacts created by local tooling
+.pnpm-store/
+pnpm-lock.yaml
+pnpm-workspace.yaml
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

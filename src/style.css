@@ -73,12 +73,11 @@ input {
   font-size: larger;
   box-sizing: border-box;
   font-weight: bold;
+}
 
-
-  p {
-    padding-top: 17px;
-    padding-left: 30px;
-  }
+.right-bar p {
+  padding-top: 17px;
+  padding-left: 30px;
 }
 
 .btn-hover {
@@ -98,11 +97,11 @@ input {
   top: 0;
   padding: 0;
   margin: 0;
+}
 
-  button {
-    padding: 0;
-    margin: 0;
-  }
+.routerlink button {
+  padding: 0;
+  margin: 0;
 }
 
 .routerlink:focus {

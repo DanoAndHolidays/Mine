@@ -12,7 +12,7 @@ const toIndex = () => {
     <div class="w-full h-full ">
         <div class="bg-[url('assets/images/bg5.jpeg')] bg-cover bg-center h-screen
      text-white p-10 pt-20 overflow-hidden flex flex-col">
-            <div class="header header-gradient"> “深岩智测”——基于多维信息感知与智能分析的深部开采煤岩损伤演化预警平台</div>
+            <div class="header header-gradient">“随钻智控”——基于随钻参数的深部强扰动围岩状态精细感知与智能卸压决策平台</div>
             <div class=" routerlink ">
                 <button @click="toIndex" class="text-gradient header ">
                     主页
