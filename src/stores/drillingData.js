@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 
+const dataUrl = (fileName) => `${import.meta.env.BASE_URL}data/${fileName}`
+
 export const useDrillingStore = defineStore('drillingData', () => {
   // ---- state ----
   const summary = ref(null)
@@ -23,7 +25,7 @@ export const useDrillingStore = defineStore('drillingData', () => {
     if (loaded.value || loading.value) return
     loading.value = true
     try {
-      const resp = await fetch('/data/dashboard_summary.json')
+      const resp = await fetch(dataUrl('dashboard_summary.json'))
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       summary.value = await resp.json()
     } catch (err) {
@@ -36,7 +38,7 @@ export const useDrillingStore = defineStore('drillingData', () => {
   async function loadExperimentManifest() {
     if (experiments.value.length > 0) return
     try {
-      const resp = await fetch('/data/experiment_manifest.csv')
+      const resp = await fetch(dataUrl('experiment_manifest.csv'))
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       const text = await resp.text()
       experiments.value = parseCSV(text)
@@ -49,8 +51,8 @@ export const useDrillingStore = defineStore('drillingData', () => {
     if (overallMetrics.value.length > 0) return
     try {
       const [overallResp, byFileResp] = await Promise.all([
-        fetch('/data/overall_metrics.csv'),
-        fetch('/data/by_file_metrics.csv')
+        fetch(dataUrl('overall_metrics.csv')),
+        fetch(dataUrl('by_file_metrics.csv'))
       ])
       if (overallResp.ok) {
         const text = await overallResp.text()
@@ -68,7 +70,7 @@ export const useDrillingStore = defineStore('drillingData', () => {
   async function loadTelemetry() {
     if (telemetry.value) return
     try {
-      const resp = await fetch('/data/drilling_telemetry.json')
+      const resp = await fetch(dataUrl('drilling_telemetry.json'))
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       telemetry.value = await resp.json()
     } catch (err) {
@@ -79,7 +81,7 @@ export const useDrillingStore = defineStore('drillingData', () => {
   async function loadRingCloud() {
     if (ringCloud.value) return
     try {
-      const resp = await fetch('/data/ring_cloud_v4.json')
+      const resp = await fetch(dataUrl('ring_cloud_v4.json'))
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
       ringCloud.value = await resp.json()
       if (!ringCloud.value.boreholes?.some(item => item.id === selectedBoreholeId.value)) {
