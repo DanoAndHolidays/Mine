@@ -1210,12 +1210,12 @@ onBeforeUnmount(() => {
 .pane-legend .legend-title { font-size: 7px; letter-spacing: 1px; }
 .pane-legend .legend-labels { font-size: 7px; }
 .pane-legend .legend-scale.stress-scale {
-  background: linear-gradient(to bottom, #a90822, #ed4b16 12%, #d18b19 29%, #4eae58 46%, #00988f 63%, #00658b 78%, #062b5d 90%, #010817);
-  box-shadow: 0 0 9px rgba(0, 101, 139, .3);
+  background: linear-gradient(to bottom, #9d001f, #e62b00 12%, #e47700 29%, #9cb900 46%, #00a86b 63%, #007fc4 78%, #0037a8 90%, #000b38);
+  box-shadow: 0 0 11px rgba(0, 127, 196, .42);
 }
 .pane-legend .legend-scale.damage-scale {
-  background: linear-gradient(to bottom, #87051e, #dc3e17 12%, #c58d13 29%, #4a9e42 46%, #007f8d 63%, #274f9c 78%, #17275a 90%, #050713);
-  box-shadow: 0 0 9px rgba(39, 79, 156, .28);
+  background: linear-gradient(to bottom, #82001d, #d52300 12%, #d47400 29%, #72a800 46%, #008c8f 63%, #2656b8 78%, #351080 90%, #10002f);
+  box-shadow: 0 0 11px rgba(53, 16, 128, .42);
 }
 .pane-readout {
   position: absolute;

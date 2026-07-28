@@ -114,24 +114,24 @@ const boreholeTargets = []
 // distinct while keeping the same low-to-high reading direction.
 const palettes = {
   stress: [
-    [0.00, new THREE.Color('#010817')],
-    [0.16, new THREE.Color('#062b5d')],
-    [0.34, new THREE.Color('#00658b')],
-    [0.52, new THREE.Color('#00988f')],
-    [0.68, new THREE.Color('#4eae58')],
-    [0.82, new THREE.Color('#d18b19')],
-    [0.93, new THREE.Color('#ed4b16')],
-    [1.00, new THREE.Color('#a90822')]
+    [0.00, new THREE.Color('#000b38')],
+    [0.16, new THREE.Color('#0037a8')],
+    [0.34, new THREE.Color('#007fc4')],
+    [0.52, new THREE.Color('#00a86b')],
+    [0.68, new THREE.Color('#9cb900')],
+    [0.82, new THREE.Color('#e47700')],
+    [0.93, new THREE.Color('#e62b00')],
+    [1.00, new THREE.Color('#9d001f')]
   ],
   damage: [
-    [0.00, new THREE.Color('#050713')],
-    [0.16, new THREE.Color('#17275a')],
-    [0.34, new THREE.Color('#274f9c')],
-    [0.52, new THREE.Color('#007f8d')],
-    [0.68, new THREE.Color('#4a9e42')],
-    [0.82, new THREE.Color('#c58d13')],
-    [0.93, new THREE.Color('#dc3e17')],
-    [1.00, new THREE.Color('#87051e')]
+    [0.00, new THREE.Color('#10002f')],
+    [0.16, new THREE.Color('#351080')],
+    [0.34, new THREE.Color('#2656b8')],
+    [0.52, new THREE.Color('#008c8f')],
+    [0.68, new THREE.Color('#72a800')],
+    [0.82, new THREE.Color('#d47400')],
+    [0.93, new THREE.Color('#d52300')],
+    [1.00, new THREE.Color('#82001d')]
   ],
   error: [
     [0.00, new THREE.Color('#020914')],
@@ -329,13 +329,12 @@ function createTemporalEnvelope() {
   geometry.computeVertexNormals()
   temporalEnvelope = new THREE.Mesh(
     geometry,
-    new THREE.MeshPhysicalMaterial({
+    new THREE.MeshBasicMaterial({
       vertexColors: true,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.18,
-      roughness: 0.72,
-      metalness: 0,
+      opacity: 0.28,
+      toneMapped: false,
       depthWrite: false
     })
   )
@@ -412,14 +411,12 @@ function createTemporalVolume() {
     const ratio = index / (SLICE_COUNT - 1)
     const x = (ratio - 0.5) * VOLUME_LENGTH
     const geometry = createAnnularGeometry()
-    const material = new THREE.MeshPhysicalMaterial({
+    const material = new THREE.MeshBasicMaterial({
       vertexColors: true,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.11,
-      roughness: 0.55,
-      metalness: 0,
-      clearcoat: 0.05,
+      opacity: 0.2,
+      toneMapped: false,
       depthWrite: false,
       alphaTest: 0.002
     })
@@ -433,7 +430,8 @@ function createTemporalVolume() {
     const points = new THREE.Points(
       geometry,
       new THREE.PointsMaterial({
-        vertexColors: true, size: 0.058, transparent: true, opacity: 0.42,
+        vertexColors: true, size: 0.062, transparent: true, opacity: 0.6,
+        toneMapped: false,
         blending: THREE.AdditiveBlending, depthWrite: false
       })
     )
@@ -506,18 +504,18 @@ function updateVolumeState() {
     sliceItem.mesh.visible = !isoMode && (sectionMode ? selected : passed || selected)
     sliceItem.points.visible = isoMode && (passed || selected)
     sliceItem.mesh.material.opacity = sectionMode
-      ? (selected ? 0.9 : 0)
+      ? (selected ? 1 : 0)
       : selected
-        ? 0.62
+        ? 0.92
         : current
-          ? 0.46
+          ? 0.78
           : passed
-            ? 0.17
+            ? 0.28
             : 0.012
-    sliceItem.points.material.opacity = selected ? 0.94 : current ? 0.68 : 0.28
+    sliceItem.points.material.opacity = selected ? 1 : current ? 0.86 : 0.4
 
     const outlineColor = selected ? '#5ed7f2' : current ? '#f2c14e' : '#718c98'
-    const outlineOpacity = selected ? 0.96 : current ? 0.82 : passed ? 0.1 : 0.025
+    const outlineOpacity = selected ? 0.64 : current ? 0.55 : passed ? 0.055 : 0.018
     sliceItem.outerRim.material.color.set(outlineColor)
     sliceItem.innerRim.material.color.set(outlineColor)
     sliceItem.outerRim.material.opacity = outlineOpacity
