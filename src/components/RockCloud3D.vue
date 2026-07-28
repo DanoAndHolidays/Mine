@@ -335,9 +335,11 @@ function createTemporalEnvelope() {
       vertexColors: true,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.84,
+      opacity: 0.92,
       toneMapped: false,
-      depthWrite: false
+      // The outer shell must occlude the inner wall. The tunnel opening still
+      // has no outer fragments, so the colored inner wall remains visible there.
+      depthWrite: true
     })
   )
   temporalEnvelope.name = '连续时序插值包络体'
