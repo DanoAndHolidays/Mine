@@ -93,40 +93,62 @@
         <div class="scene-heading">
           <div>
             <span class="live-dot"></span>
-            <p>三维时序切片体云 <small>3D TEMPORAL SECTION VOLUME</small></p>
+            <p>多钻孔联合拟合双场 <small>MULTI-BOREHOLE STRESS / DAMAGE FIELDS</small></p>
           </div>
-          <nav class="metric-tabs">
-            <button v-for="option in metricOptions" :key="option.key" :class="{ active: metric === option.key }" @click="metric = option.key">
-              {{ option.label }}
-            </button>
-          </nav>
+          <div class="fit-method"><span>径向线性插值</span><i></i><span>环向周期 RBF</span></div>
         </div>
-        <div class="scene-frame">
+        <div class="scene-frame dual-scene-frame">
           <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
-          <RockCloud3D
-            :progress="cloudProgress"
-            :metric="metric"
-            :slice="slice"
-            :auto-rotate="autoRotate"
-            :view-mode="viewMode"
-            :playing="playing"
-            :speed="evolutionSpeed"
-            :model-id="store.selectedModel"
-            :boreholes="store.boreholes"
-            :selected-borehole-id="store.selectedBoreholeId"
-            :max-depth="store.ringCloud?.meta.depthRangeCm?.[1] || 125"
-            @sample="cloudSample = $event"
-            @select="store.selectedBoreholeId = $event"
-            @slice-select="selectAnalysisSlice"
-          />
-          <div class="model-tag tag-load"><span>τ</span><i></i>{{ formatValue(currentSample?.torque, 1) }} N·m</div>
-          <div class="model-tag tag-face"><span>D</span><i></i>反演 {{ formatValue(currentPrediction?.damage, 0) }}%</div>
-          <div class="model-tag tag-sensor"><span>{{ selectedBorehole?.id || '--' }}</span><i></i>{{ selectedBorehole?.label || '等待钻孔数据' }}</div>
-          <div class="axis-widget"><b class="axis-z">Z</b><b class="axis-y">Y</b><b class="axis-x">X</b><i></i></div>
-          <div class="cloud-legend">
-            <div class="legend-title"><span>{{ activeMetric.label }}</span><small>{{ activeMetric.unit }}</small></div>
-            <div class="legend-scale damage-scale"></div>
-            <div class="legend-labels"><span v-for="tick in activeMetric.ticks" :key="tick">{{ tick }}</span></div>
+          <div class="dual-cloud-grid">
+            <article class="cloud-pane stress-cloud-pane">
+              <RockCloud3D
+                compact
+                :progress="cloudProgress"
+                metric="stress"
+                :slice="slice"
+                :auto-rotate="autoRotate"
+                :view-mode="viewMode"
+                :playing="playing"
+                :speed="evolutionSpeed"
+                :model-id="store.selectedModel"
+                :boreholes="store.boreholes"
+                :selected-borehole-id="store.selectedBoreholeId"
+                :max-depth="store.ringCloud?.meta.depthRangeCm?.[1] || 125"
+                @sample="cloudSample = $event"
+                @select="store.selectedBoreholeId = $event"
+                @slice-select="selectAnalysisSlice"
+              />
+              <div class="cloud-legend pane-legend stress-legend">
+                <div class="legend-title"><span>{{ stressMetric.label }}</span><small>{{ stressMetric.unit }}</small></div>
+                <div class="legend-scale stress-scale"></div>
+                <div class="legend-labels"><span v-for="tick in stressMetric.ticks" :key="tick">{{ tick }}</span></div>
+              </div>
+              <div class="pane-readout stress-readout"><span>σ</span><strong>{{ formatValue(currentPrediction?.stress, 1) }}</strong><em>MPa</em></div>
+            </article>
+            <article class="cloud-pane damage-cloud-pane">
+              <RockCloud3D
+                compact
+                :progress="cloudProgress"
+                metric="damage"
+                :slice="slice"
+                :auto-rotate="autoRotate"
+                :view-mode="viewMode"
+                :playing="playing"
+                :speed="evolutionSpeed"
+                :model-id="store.selectedModel"
+                :boreholes="store.boreholes"
+                :selected-borehole-id="store.selectedBoreholeId"
+                :max-depth="store.ringCloud?.meta.depthRangeCm?.[1] || 125"
+                @select="store.selectedBoreholeId = $event"
+                @slice-select="selectAnalysisSlice"
+              />
+              <div class="cloud-legend pane-legend damage-legend">
+                <div class="legend-title"><span>{{ damageMetric.label }}</span><small>{{ damageMetric.unit }}</small></div>
+                <div class="legend-scale damage-scale"></div>
+                <div class="legend-labels"><span v-for="tick in damageMetric.ticks" :key="tick">{{ tick }}</span></div>
+              </div>
+              <div class="pane-readout damage-readout"><span>D</span><strong>{{ formatValue(currentPrediction?.damage, 0) }}</strong><em>%</em></div>
+            </article>
           </div>
           <div class="scene-data-strip">
             <div><span>分析切面</span><strong>{{ analysisDepth.toFixed(1) }} cm · {{ selectedBorehole?.id || '--' }}</strong></div>
@@ -278,7 +300,6 @@ const PanelTitle = defineComponent({
 const store = useDrillingStore()
 
 // ---- view state ----
-const metric = ref('stress')
 const slice = ref(0)
 const analysisPinned = ref(false)
 const autoRotate = ref(true)
@@ -363,12 +384,8 @@ const analysisDepth = computed(() => Number(currentSample.value?.depth || slice.
 const liveDepth = computed(() => evolutionProgress.value / 100 * Number(store.ringCloud?.meta?.depthRangeCm?.[1] || 125))
 const currentDamageLabel = computed(() => `D${currentSample.value?.actualDamage ?? '--'}`)
 
-const metricOptions = [
-  { key: 'stress', label: '反演应力', unit: 'MPa', ticks: ['40', '32', '24', '16', '8', '0'] },
-  { key: 'damage', label: '反演损伤', unit: '%', ticks: ['80', '64', '48', '32', '16', '0'] },
-  { key: 'error', label: '联合误差', unit: '归一值', ticks: ['1.0', '.8', '.6', '.4', '.2', '0'] }
-]
-const activeMetric = computed(() => metricOptions.find(item => item.key === metric.value) || metricOptions[0])
+const stressMetric = { label: '反演应力', unit: 'MPa', ticks: ['40', '32', '24', '16', '8', '0'] }
+const damageMetric = { label: '反演损伤', unit: '%', ticks: ['80', '64', '48', '32', '16', '0'] }
 
 const views = [
   { key: 'cloud', label: '时序体云', icon: '▱' },
@@ -1156,5 +1173,72 @@ onBeforeUnmount(() => {
   .dashboard-body { grid-template-columns: 272px minmax(0, 1fr) 272px; }
   .metric-tabs button { padding-inline: 7px; }
   .scene-data-strip div:nth-child(3) { display: none; }
+}
+
+/* Multi-borehole result view: synchronized stress and damage fields. */
+.fit-method { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; color: #78929c; font-size: 8px; letter-spacing: .5px; }
+.fit-method i { width: 14px; height: 1px; background: var(--gold); opacity: .72; }
+.dual-scene-frame { isolation: isolate; }
+.dual-cloud-grid {
+  position: absolute;
+  inset: 0 0 45px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px;
+  padding: 6px;
+}
+.cloud-pane {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  background: radial-gradient(circle at 50% 48%, rgba(19, 73, 91, .13), rgba(2, 8, 14, .34) 68%);
+  border: 1px solid rgba(126, 159, 171, .16);
+}
+.stress-cloud-pane { border-top-color: rgba(27, 151, 177, .48); }
+.damage-cloud-pane { border-top-color: rgba(205, 111, 31, .48); }
+.pane-legend.cloud-legend {
+  top: 72px;
+  right: 8px;
+  grid-template-columns: 34px 9px 19px;
+  gap: 4px;
+  width: auto;
+  height: 142px;
+  padding: 7px 5px;
+  background: rgba(3, 11, 17, .86);
+  border-color: rgba(132, 164, 175, .24);
+}
+.pane-legend .legend-title { font-size: 7px; letter-spacing: 1px; }
+.pane-legend .legend-labels { font-size: 7px; }
+.pane-legend .legend-scale.stress-scale {
+  background: linear-gradient(to bottom, #a90822, #ed4b16 12%, #d18b19 29%, #4eae58 46%, #00988f 63%, #00658b 78%, #062b5d 90%, #010817);
+  box-shadow: 0 0 9px rgba(0, 101, 139, .3);
+}
+.pane-legend .legend-scale.damage-scale {
+  background: linear-gradient(to bottom, #87051e, #dc3e17 12%, #c58d13 29%, #4a9e42 46%, #007f8d 63%, #274f9c 78%, #17275a 90%, #050713);
+  box-shadow: 0 0 9px rgba(39, 79, 156, .28);
+}
+.pane-readout {
+  position: absolute;
+  z-index: 6;
+  left: 11px;
+  bottom: 11px;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 5px 8px;
+  background: rgba(3, 11, 17, .84);
+  border: 1px solid rgba(132, 164, 175, .22);
+  pointer-events: none;
+}
+.pane-readout span { margin-right: 3px; color: #86a8b2; font: italic 10px Georgia, serif; }
+.pane-readout strong { color: #e4ecee; font: 13px Electronic, monospace; }
+.pane-readout em { color: #758d96; font-size: 7px; font-style: normal; }
+.stress-readout { border-left: 2px solid #00988f; }
+.damage-readout { border-left: 2px solid #dc3e17; }
+.dual-scene-frame > .scene-data-strip { bottom: 7px; width: max-content; max-width: calc(100% - 18px); }
+
+@media (max-width: 1500px) {
+  .pane-legend.cloud-legend { top: 64px; height: 128px; }
+  .fit-method { gap: 4px; font-size: 7px; }
 }
 </style>

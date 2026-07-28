@@ -1,10 +1,10 @@
 <template>
-  <div ref="container" class="volume-cloud-canvas" @pointermove="onPointerMove" @pointerleave="hovered = false" @click="onSceneClick">
+  <div ref="container" class="volume-cloud-canvas" :class="{ compact }" @pointermove="onPointerMove" @pointerleave="hovered = false" @click="onSceneClick">
     <div class="field-header">
-      <span class="field-symbol">F(θ, r, t)</span>
+      <span class="field-symbol">{{ metricMeta.symbol }}</span>
       <div>
-        <strong>环向钻孔时序体云</strong>
-        <small>ANNULAR BOREHOLE TEMPORAL VOLUME</small>
+        <strong>{{ metricMeta.title }}</strong>
+        <small>{{ metricMeta.subtitle }}</small>
       </div>
     </div>
 
@@ -65,6 +65,7 @@ const props = defineProps({
   slice: { type: Number, default: 0 },
   autoRotate: { type: Boolean, default: true },
   viewMode: { type: String, default: 'cloud' },
+  compact: { type: Boolean, default: false },
   playing: { type: Boolean, default: true },
   speed: { type: Number, default: 1 },
   modelId: { type: String, default: 'v3' },
@@ -83,8 +84,14 @@ const SLICE_COUNT = 17
 const TUNNEL_RADIUS = 1.72
 const CLOUD_RADIUS = 4.25
 const VOLUME_LENGTH = 7.8
-const RADIAL_STEPS = 24
-const ANGULAR_STEPS = 88
+const RADIAL_STEPS = 32
+const ANGULAR_STEPS = 96
+
+const metricMeta = computed(() => {
+  if (props.metric === 'damage') return { symbol: 'D(θ,r,t)', title: '损伤反演拟合场', subtitle: 'DAMAGE INVERSION · PERIODIC RBF' }
+  if (props.metric === 'error') return { symbol: 'E(θ,r,t)', title: '联合误差拟合场', subtitle: 'NORMALIZED JOINT ERROR FIELD' }
+  return { symbol: 'σ(θ,r,t)', title: '应力反演拟合场', subtitle: 'STRESS INVERSION · PERIODIC RBF' }
+})
 
 const currentRatio = computed(() => THREE.MathUtils.clamp(props.progress / 100, 0, 1))
 const selectedRatio = computed(() => THREE.MathUtils.clamp(props.slice / 100, 0, 1))
@@ -103,16 +110,37 @@ const sliceHitTargets = []
 const boreholeObjects = []
 const boreholeTargets = []
 
-// Restrained blue-gold scientific palette (single-root with a gold high-value endpoint).
-const palette = [
-  [0.00, new THREE.Color('#102a43')],
-  [0.18, new THREE.Color('#174c73')],
-  [0.36, new THREE.Color('#1d7494')],
-  [0.54, new THREE.Color('#3a98a0')],
-  [0.70, new THREE.Color('#7aafa0')],
-  [0.84, new THREE.Color('#c0b46c')],
-  [1.00, new THREE.Color('#f2c14e')]
-]
+// Deep, high-contrast scientific palettes. Stress and damage remain visually
+// distinct while keeping the same low-to-high reading direction.
+const palettes = {
+  stress: [
+    [0.00, new THREE.Color('#010817')],
+    [0.16, new THREE.Color('#062b5d')],
+    [0.34, new THREE.Color('#00658b')],
+    [0.52, new THREE.Color('#00988f')],
+    [0.68, new THREE.Color('#4eae58')],
+    [0.82, new THREE.Color('#d18b19')],
+    [0.93, new THREE.Color('#ed4b16')],
+    [1.00, new THREE.Color('#a90822')]
+  ],
+  damage: [
+    [0.00, new THREE.Color('#050713')],
+    [0.16, new THREE.Color('#17275a')],
+    [0.34, new THREE.Color('#274f9c')],
+    [0.52, new THREE.Color('#007f8d')],
+    [0.68, new THREE.Color('#4a9e42')],
+    [0.82, new THREE.Color('#c58d13')],
+    [0.93, new THREE.Color('#dc3e17')],
+    [1.00, new THREE.Color('#87051e')]
+  ],
+  error: [
+    [0.00, new THREE.Color('#020914')],
+    [0.28, new THREE.Color('#123d62')],
+    [0.55, new THREE.Color('#168b91')],
+    [0.78, new THREE.Color('#d28b18')],
+    [1.00, new THREE.Color('#9d071d')]
+  ]
+}
 
 function sliceDepth(index) {
   return index / (SLICE_COUNT - 1) * props.maxDepth
@@ -123,6 +151,7 @@ function selectSlice(index) {
 }
 
 function colorAt(value) {
+  const palette = palettes[props.metric] || palettes.stress
   const normalized = THREE.MathUtils.clamp(value, 0, 1)
   for (let index = 0; index < palette.length - 1; index += 1) {
     const [start, startColor] = palette[index]
@@ -137,6 +166,17 @@ function sampleAtRatio(borehole, ratio) {
   if (!rows.length) return null
   const index = Math.min(Math.round(THREE.MathUtils.clamp(ratio, 0, 1) * (rows.length - 1)), rows.length - 1)
   return rows[index]
+}
+
+function interpolatedFieldAtRatio(borehole, ratio) {
+  const rows = borehole?.samples || []
+  if (!rows.length) return 0
+  if (rows.length === 1) return normalizedField(rows[0])
+  const position = THREE.MathUtils.clamp(ratio, 0, 1) * (rows.length - 1)
+  const lowerIndex = Math.floor(position)
+  const upperIndex = Math.min(lowerIndex + 1, rows.length - 1)
+  const amount = position - lowerIndex
+  return THREE.MathUtils.lerp(normalizedField(rows[lowerIndex]), normalizedField(rows[upperIndex]), amount)
 }
 
 function normalizedField(sample) {
@@ -160,14 +200,16 @@ function circularDistance(a, b) {
 
 function fieldAt(angle, radialRatio) {
   if (!props.boreholes.length) return 0
-  const spread = (Math.PI * 2 / props.boreholes.length) * 0.78
+  // Periodic Gaussian RBF interpolation. The tighter, data-spacing-derived
+  // bandwidth preserves measured borehole peaks instead of washing them out.
+  const spread = (Math.PI * 2 / props.boreholes.length) * 0.46
   let weighted = 0
   let totalWeight = 0
   props.boreholes.forEach((borehole) => {
     const boreholeAngle = THREE.MathUtils.degToRad(Number(borehole.angleDeg || 0))
     const distance = circularDistance(angle, boreholeAngle)
-    const weight = Math.exp(-0.5 * Math.pow(distance / spread, 2)) + 0.002
-    weighted += normalizedField(sampleAtRatio(borehole, radialRatio)) * weight
+    const weight = Math.exp(-0.5 * Math.pow(distance / spread, 2)) + 0.0002
+    weighted += interpolatedFieldAtRatio(borehole, radialRatio) * weight
     totalWeight += weight
   })
   return totalWeight ? weighted / totalWeight : 0
@@ -291,7 +333,7 @@ function createTemporalEnvelope() {
       vertexColors: true,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.105,
+      opacity: 0.18,
       roughness: 0.72,
       metalness: 0,
       depthWrite: false
@@ -310,7 +352,7 @@ function recolorTemporalEnvelope() {
     const ratio = sliceIndex / (SLICE_COUNT - 1)
     for (let angular = 0; angular <= ANGULAR_STEPS; angular += 1) {
       const angle = angular / ANGULAR_STEPS * Math.PI * 2
-      const color = colorAt(fieldAt(angle, ratio)).lerp(new THREE.Color('#19303a'), 0.18)
+      const color = colorAt(fieldAt(angle, ratio)).lerp(new THREE.Color('#07121d'), 0.06)
       const vertex = sliceIndex * (ANGULAR_STEPS + 1) + angular
       colors.setXYZ(vertex, color.r, color.g, color.b)
     }
@@ -374,7 +416,7 @@ function createTemporalVolume() {
       vertexColors: true,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.07,
+      opacity: 0.11,
       roughness: 0.55,
       metalness: 0,
       clearcoat: 0.05,
@@ -391,7 +433,7 @@ function createTemporalVolume() {
     const points = new THREE.Points(
       geometry,
       new THREE.PointsMaterial({
-        vertexColors: true, size: 0.055, transparent: true, opacity: 0.3,
+        vertexColors: true, size: 0.058, transparent: true, opacity: 0.42,
         blending: THREE.AdditiveBlending, depthWrite: false
       })
     )
@@ -466,13 +508,13 @@ function updateVolumeState() {
     sliceItem.mesh.material.opacity = sectionMode
       ? (selected ? 0.9 : 0)
       : selected
-        ? 0.48
+        ? 0.62
         : current
-          ? 0.34
+          ? 0.46
           : passed
-            ? 0.115
+            ? 0.17
             : 0.012
-    sliceItem.points.material.opacity = selected ? 0.82 : current ? 0.52 : 0.18
+    sliceItem.points.material.opacity = selected ? 0.94 : current ? 0.68 : 0.28
 
     const outlineColor = selected ? '#5ed7f2' : current ? '#f2c14e' : '#718c98'
     const outlineOpacity = selected ? 0.96 : current ? 0.82 : passed ? 0.1 : 0.025
@@ -628,7 +670,7 @@ function init() {
     renderer.setClearColor(0x000000, 0)
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
-    renderer.toneMappingExposure = 1.03
+    renderer.toneMappingExposure = 1.08
     container.value.prepend(renderer.domElement)
 
     labelRenderer = new CSS2DRenderer()
@@ -753,6 +795,14 @@ onBeforeUnmount(() => {
 .volume-cloud-canvas :deep(.time-axis-label) { min-width: 160px; padding: 4px 7px; background: rgba(7, 17, 24, .78); border-left: 2px solid #8ea2aa; }
 .volume-cloud-canvas :deep(.time-axis-label span) { color: #d5e0e3; font-size: 9px; }
 .volume-cloud-canvas :deep(.time-axis-label strong), .volume-cloud-canvas :deep(.time-axis-label small) { display: block; color: #8ea2aa; font-size: 6px; font-weight: 400; }
+.volume-cloud-canvas.compact .coordinate-note,
+.volume-cloud-canvas.compact .slice-selector,
+.volume-cloud-canvas.compact .view-hint,
+.volume-cloud-canvas.compact .slice-status span:last-child { display: none; }
+.volume-cloud-canvas.compact .field-header { top: 10px; left: 11px; }
+.volume-cloud-canvas.compact .field-symbol { min-width: 58px; height: 28px; }
+.volume-cloud-canvas.compact .slice-status { top: 11px; right: 10px; }
+.volume-cloud-canvas.compact .mode-note { top: 44px; }
 .field-header { position: absolute; z-index: 4; top: 14px; left: 14px; display: flex; align-items: center; gap: 9px; pointer-events: none; }
 .field-symbol { display: grid; place-items: center; min-width: 66px; height: 32px; color: #dce8eb; font: 11px Georgia, serif; font-style: italic; background: rgba(7, 18, 26, .72); border: 1px solid rgba(132, 164, 175, .28); }
 .field-header strong, .field-header small { display: block; }
