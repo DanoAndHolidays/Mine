@@ -182,8 +182,18 @@
               <input v-model.number="slice" type="range" min="0" max="100" step="0.1" @input="pinAnalysisSlice" />
               <em>{{ analysisDepth.toFixed(1) }}cm</em>
             </label>
-            <button class="follow-toggle" :class="{ active: !analysisPinned }" @click="followCurrentSlice">{{ analysisPinned ? '跟随当前' : '实时跟随中' }}</button>
-            <button class="rotate-toggle" :class="{ active: autoRotate }" @click="autoRotate = !autoRotate"><i>↻</i>{{ autoRotate ? '旋转' : '停止' }}</button>
+            <button
+              class="follow-toggle"
+              :class="{ active: !analysisPinned }"
+              :title="analysisPinned ? '恢复演进并让分析面跟随当前钻进面' : '锁定当前分析面，钻进继续演进'"
+              @click="toggleFollowCurrentSlice"
+            >{{ analysisPinned ? '跟随当前' : '停止跟随' }}</button>
+            <button
+              class="rotate-toggle"
+              :class="{ active: autoRotate }"
+              :title="autoRotate ? '立即停止两张云图自动旋转' : '启动两张云图自动旋转'"
+              @click="toggleAutoRotate"
+            ><i>{{ autoRotate ? 'Ⅱ' : '↻' }}</i>{{ autoRotate ? '停止旋转' : '开始旋转' }}</button>
           </div>
         </div>
       </section>
@@ -368,9 +378,19 @@ function selectAnalysisSlice(value) {
   analysisPinned.value = true
 }
 
-function followCurrentSlice() {
+function toggleFollowCurrentSlice() {
+  if (!analysisPinned.value) {
+    analysisPinned.value = true
+    slice.value = evolutionProgress.value
+    return
+  }
+  playing.value = true
   analysisPinned.value = false
   slice.value = evolutionProgress.value
+}
+
+function toggleAutoRotate() {
+  autoRotate.value = !autoRotate.value
 }
 
 const telemetrySeries = computed(() => store.currentTelemetrySeries)

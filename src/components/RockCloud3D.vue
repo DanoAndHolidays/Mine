@@ -801,7 +801,6 @@ function init() {
 function animate() {
   animationFrame = requestAnimationFrame(animate)
   const elapsed = clock.getElapsedTime()
-  controls.autoRotate = props.autoRotate
   controls.update()
   const currentItem = temporalSlices[currentSliceIndex.value]
   if (currentItem) {
@@ -829,6 +828,17 @@ watch(() => props.slice, updateVolumeState)
 watch(() => props.selectedBoreholeId, () => {
   updateTemporalTrajectories()
   updateAnalysisBoreholes()
+})
+watch(() => props.autoRotate, (enabled) => {
+  if (!controls) return
+  controls.autoRotate = enabled
+  if (!enabled) {
+    // Flush OrbitControls' remaining damping delta so "stop" is immediate.
+    const dampingEnabled = controls.enableDamping
+    controls.enableDamping = false
+    controls.update()
+    controls.enableDamping = dampingEnabled
+  }
 })
 watch(() => props.viewMode, updateViewMode)
 
