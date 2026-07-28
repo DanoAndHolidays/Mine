@@ -86,6 +86,7 @@ const CLOUD_RADIUS = 4.25
 const VOLUME_LENGTH = 7.8
 const RADIAL_STEPS = 32
 const ANGULAR_STEPS = 96
+const ENVELOPE_STEPS = 65
 
 const metricMeta = computed(() => {
   if (props.metric === 'damage') return { symbol: 'D(θ,r,t)', title: '损伤反演拟合场', subtitle: 'DAMAGE INVERSION · PERIODIC RBF' }
@@ -304,8 +305,8 @@ function createTemporalEnvelope() {
   const positions = []
   const colors = []
   const indices = []
-  for (let sliceIndex = 0; sliceIndex < SLICE_COUNT; sliceIndex += 1) {
-    const ratio = sliceIndex / (SLICE_COUNT - 1)
+  for (let sliceIndex = 0; sliceIndex < ENVELOPE_STEPS; sliceIndex += 1) {
+    const ratio = sliceIndex / (ENVELOPE_STEPS - 1)
     const x = (ratio - 0.5) * VOLUME_LENGTH
     const radius = TUNNEL_RADIUS + (CLOUD_RADIUS - TUNNEL_RADIUS) * ratio
     for (let angular = 0; angular <= ANGULAR_STEPS; angular += 1) {
@@ -315,7 +316,7 @@ function createTemporalEnvelope() {
       colors.push(0.04, 0.08, 0.11)
     }
   }
-  for (let sliceIndex = 0; sliceIndex < SLICE_COUNT - 1; sliceIndex += 1) {
+  for (let sliceIndex = 0; sliceIndex < ENVELOPE_STEPS - 1; sliceIndex += 1) {
     for (let angular = 0; angular < ANGULAR_STEPS; angular += 1) {
       const current = sliceIndex * (ANGULAR_STEPS + 1) + angular
       const next = current + ANGULAR_STEPS + 1
@@ -333,12 +334,12 @@ function createTemporalEnvelope() {
       vertexColors: true,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.28,
+      opacity: 0.68,
       toneMapped: false,
       depthWrite: false
     })
   )
-  temporalEnvelope.name = '连续时序包络体'
+  temporalEnvelope.name = '连续时序插值包络体'
   temporalEnvelope.renderOrder = 2
   rootGroup.add(temporalEnvelope)
   recolorTemporalEnvelope()
@@ -347,8 +348,8 @@ function createTemporalEnvelope() {
 function recolorTemporalEnvelope() {
   if (!temporalEnvelope) return
   const colors = temporalEnvelope.geometry.attributes.color
-  for (let sliceIndex = 0; sliceIndex < SLICE_COUNT; sliceIndex += 1) {
-    const ratio = sliceIndex / (SLICE_COUNT - 1)
+  for (let sliceIndex = 0; sliceIndex < ENVELOPE_STEPS; sliceIndex += 1) {
+    const ratio = sliceIndex / (ENVELOPE_STEPS - 1)
     for (let angular = 0; angular <= ANGULAR_STEPS; angular += 1) {
       const angle = angular / ANGULAR_STEPS * Math.PI * 2
       const color = colorAt(fieldAt(angle, ratio)).lerp(new THREE.Color('#07121d'), 0.06)
@@ -501,7 +502,9 @@ function updateVolumeState() {
     const sectionMode = props.viewMode === 'section'
     const isoMode = props.viewMode === 'iso'
 
-    sliceItem.mesh.visible = !isoMode && (sectionMode ? selected : passed || selected)
+    // In cloud mode the dense interpolated envelope carries the history.
+    // Keeping only the current/analysis caps removes visible gaps in side view.
+    sliceItem.mesh.visible = !isoMode && (sectionMode ? selected : current || selected)
     sliceItem.points.visible = isoMode && (passed || selected)
     sliceItem.mesh.material.opacity = sectionMode
       ? (selected ? 1 : 0)
@@ -520,16 +523,17 @@ function updateVolumeState() {
     sliceItem.innerRim.material.color.set(outlineColor)
     sliceItem.outerRim.material.opacity = outlineOpacity
     sliceItem.innerRim.material.opacity = outlineOpacity
-    sliceItem.outerRim.visible = !sectionMode || selected
-    sliceItem.innerRim.visible = !sectionMode || selected
+    sliceItem.outerRim.visible = sectionMode ? selected : current || selected
+    sliceItem.innerRim.visible = sectionMode ? selected : current || selected
     sliceItem.label.visible = selected || current
     sliceItem.label.element.classList.toggle('selected', selected)
     sliceItem.label.element.classList.toggle('current', current)
   })
   if (temporalEnvelope) {
     const intervalIndexCount = ANGULAR_STEPS * 6
-    temporalEnvelope.geometry.setDrawRange(0, currentIndex * intervalIndexCount)
-    temporalEnvelope.visible = props.viewMode === 'cloud' && currentIndex > 0
+    const revealedIntervals = Math.ceil(currentRatio.value * (ENVELOPE_STEPS - 1))
+    temporalEnvelope.geometry.setDrawRange(0, revealedIntervals * intervalIndexCount)
+    temporalEnvelope.visible = props.viewMode === 'cloud' && revealedIntervals > 0
   }
   updateTemporalTrajectories()
   updateAnalysisBoreholes()
