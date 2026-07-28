@@ -44,6 +44,7 @@
     </div>
     <div v-if="viewMode === 'section'" class="mode-note"><i></i>单切面分析 · {{ selectedDepth.toFixed(1) }} cm</div>
     <div v-if="viewMode === 'iso'" class="mode-note"><i></i>等值点云 · 历史时序体</div>
+    <div v-if="viewMode === 'cloud'" class="mode-note continuous-note"><i></i>完整连续拟合体 · 当前面动态定位</div>
 
     <div v-if="!webglReady" class="webgl-fallback">
       <strong>3D ENGINE OFFLINE</strong>
@@ -83,7 +84,7 @@ const webglError = ref('')
 const SLICE_COUNT = 17
 const TUNNEL_RADIUS = 1.72
 const CLOUD_RADIUS = 4.25
-const VOLUME_LENGTH = 7.8
+const VOLUME_LENGTH = 10.4
 const RADIAL_STEPS = 32
 const ANGULAR_STEPS = 96
 const ENVELOPE_STEPS = 65
@@ -334,7 +335,7 @@ function createTemporalEnvelope() {
       vertexColors: true,
       side: THREE.DoubleSide,
       transparent: true,
-      opacity: 0.68,
+      opacity: 0.84,
       toneMapped: false,
       depthWrite: false
     })
@@ -386,11 +387,12 @@ function rebuildTemporalTrajectories() {
 function updateTemporalTrajectories() {
   if (!temporalTrajectoryGroup) return
   const currentIndex = currentSliceIndex.value
-  temporalTrajectoryGroup.visible = props.viewMode !== 'section' && currentIndex > 0
+  const endIndex = props.viewMode === 'cloud' ? SLICE_COUNT - 1 : currentIndex
+  temporalTrajectoryGroup.visible = props.viewMode !== 'section' && endIndex > 0
   temporalTrajectories.forEach((item) => {
     const angle = THREE.MathUtils.degToRad(Number(item.borehole.angleDeg || 0))
     const points = []
-    for (let sliceIndex = 0; sliceIndex <= currentIndex; sliceIndex += 1) {
+    for (let sliceIndex = 0; sliceIndex <= endIndex; sliceIndex += 1) {
       const ratio = sliceIndex / (SLICE_COUNT - 1)
       const x = (ratio - 0.5) * VOLUME_LENGTH
       const radius = TUNNEL_RADIUS + (CLOUD_RADIUS - TUNNEL_RADIUS) * ratio
@@ -401,7 +403,7 @@ function updateTemporalTrajectories() {
     const selected = item.borehole.id === props.selectedBoreholeId
     const special = item.borehole.role === 'special-variable-stress'
     item.line.material.color.set(selected ? '#75d7e8' : special ? '#d0a956' : '#8aa0a8')
-    item.line.material.opacity = selected ? 0.72 : special ? 0.36 : 0.17
+    item.line.material.opacity = selected ? 0.86 : special ? 0.5 : 0.28
   })
 }
 
@@ -531,9 +533,9 @@ function updateVolumeState() {
   })
   if (temporalEnvelope) {
     const intervalIndexCount = ANGULAR_STEPS * 6
-    const revealedIntervals = Math.ceil(currentRatio.value * (ENVELOPE_STEPS - 1))
-    temporalEnvelope.geometry.setDrawRange(0, revealedIntervals * intervalIndexCount)
-    temporalEnvelope.visible = props.viewMode === 'cloud' && revealedIntervals > 0
+    const allIntervals = ENVELOPE_STEPS - 1
+    temporalEnvelope.geometry.setDrawRange(0, allIntervals * intervalIndexCount)
+    temporalEnvelope.visible = props.viewMode === 'cloud'
   }
   updateTemporalTrajectories()
   updateAnalysisBoreholes()
@@ -629,7 +631,7 @@ function updateViewMode() {
   tunnelMesh.material.opacity = props.viewMode === 'section' ? 0.012 : 0.028
   tunnelWire.material.opacity = props.viewMode === 'section' ? 0.008 : 0.012
   temporalCage.visible = props.viewMode !== 'section'
-  if (temporalEnvelope) temporalEnvelope.visible = props.viewMode === 'cloud' && currentSliceIndex.value > 0
+  if (temporalEnvelope) temporalEnvelope.visible = props.viewMode === 'cloud'
   recolorVolume()
   updateVolumeState()
 }
@@ -664,7 +666,7 @@ function init() {
     scene = new THREE.Scene()
     scene.fog = new THREE.FogExp2('#06111a', 0.018)
     camera = new THREE.PerspectiveCamera(34, container.value.clientWidth / container.value.clientHeight, 0.1, 100)
-    camera.position.set(12.8, 6.8, 11.2)
+    camera.position.set(8.6, 5.8, 16.4)
 
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.7))
@@ -685,7 +687,7 @@ function init() {
     controls.enableDamping = true
     controls.dampingFactor = 0.055
     controls.minDistance = 10
-    controls.maxDistance = 30
+    controls.maxDistance = 34
     controls.autoRotate = props.autoRotate
     controls.autoRotateSpeed = 0.32
     controls.target.set(0, 0, 0)
@@ -800,11 +802,14 @@ onBeforeUnmount(() => {
 .volume-cloud-canvas.compact .coordinate-note,
 .volume-cloud-canvas.compact .slice-selector,
 .volume-cloud-canvas.compact .view-hint,
+.volume-cloud-canvas.compact :deep(.time-axis-label),
 .volume-cloud-canvas.compact .slice-status span:last-child { display: none; }
 .volume-cloud-canvas.compact .field-header { top: 10px; left: 11px; }
 .volume-cloud-canvas.compact .field-symbol { min-width: 58px; height: 28px; }
 .volume-cloud-canvas.compact .slice-status { top: 11px; right: 10px; }
 .volume-cloud-canvas.compact .mode-note { top: 44px; }
+.volume-cloud-canvas.compact .continuous-note { color: #c9d8dc; border-color: rgba(0, 168, 107, .32); }
+.volume-cloud-canvas.compact .continuous-note i { background: #00a86b; box-shadow: 0 0 7px rgba(0, 168, 107, .55); }
 .field-header { position: absolute; z-index: 4; top: 14px; left: 14px; display: flex; align-items: center; gap: 9px; pointer-events: none; }
 .field-symbol { display: grid; place-items: center; min-width: 66px; height: 32px; color: #dce8eb; font: 11px Georgia, serif; font-style: italic; background: rgba(7, 18, 26, .72); border: 1px solid rgba(132, 164, 175, .28); }
 .field-header strong, .field-header small { display: block; }
