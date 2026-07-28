@@ -44,7 +44,7 @@
     </div>
     <div v-if="viewMode === 'section'" class="mode-note"><i></i>单切面分析 · {{ selectedDepth.toFixed(1) }} cm</div>
     <div v-if="viewMode === 'iso'" class="mode-note"><i></i>等值点云 · 历史时序体</div>
-    <div v-if="viewMode === 'cloud'" class="mode-note continuous-note"><i></i>完整连续拟合体 · 当前面动态定位</div>
+    <div v-if="viewMode === 'cloud'" class="mode-note continuous-note"><i></i>外壁 + 内壁连续生长 · 当前面动态定位</div>
 
     <div v-if="!webglReady" class="webgl-fallback">
       <strong>3D ENGINE OFFLINE</strong>
@@ -104,7 +104,7 @@ const currentSliceIndex = computed(() => Math.round(currentRatio.value * (SLICE_
 const selectedSliceIndex = computed(() => Math.round(selectedRatio.value * (SLICE_COUNT - 1)))
 
 let scene, camera, renderer, labelRenderer, controls, animationFrame, resizeObserver, clock
-let rootGroup, tunnelMesh, tunnelWire, temporalCage, temporalEnvelope, temporalTrajectoryGroup, analysisBoreholeGroup
+let rootGroup, tunnelMesh, tunnelWire, temporalCage, temporalEnvelope, temporalInnerWall, temporalTrajectoryGroup, analysisBoreholeGroup
 let raycaster, pointer
 const temporalSlices = []
 const temporalTrajectories = []
@@ -361,6 +361,65 @@ function recolorTemporalEnvelope() {
   colors.needsUpdate = true
 }
 
+function createTemporalInnerWall() {
+  const positions = []
+  const colors = []
+  const indices = []
+  const wallRadius = TUNNEL_RADIUS + 0.018
+  for (let sliceIndex = 0; sliceIndex < ENVELOPE_STEPS; sliceIndex += 1) {
+    const ratio = sliceIndex / (ENVELOPE_STEPS - 1)
+    const x = (ratio - 0.5) * VOLUME_LENGTH
+    for (let angular = 0; angular <= ANGULAR_STEPS; angular += 1) {
+      const angle = angular / ANGULAR_STEPS * Math.PI * 2
+      const point = pointOnRing(wallRadius, angle, x)
+      positions.push(point.x, point.y, point.z)
+      colors.push(0.04, 0.08, 0.11)
+    }
+  }
+  for (let sliceIndex = 0; sliceIndex < ENVELOPE_STEPS - 1; sliceIndex += 1) {
+    for (let angular = 0; angular < ANGULAR_STEPS; angular += 1) {
+      const current = sliceIndex * (ANGULAR_STEPS + 1) + angular
+      const next = current + ANGULAR_STEPS + 1
+      indices.push(current, current + 1, next, current + 1, next + 1, next)
+    }
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  temporalInnerWall = new THREE.Mesh(
+    geometry,
+    new THREE.MeshBasicMaterial({
+      vertexColors: true,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.78,
+      toneMapped: false,
+      depthWrite: false
+    })
+  )
+  temporalInnerWall.name = '连续时序彩色内壁'
+  temporalInnerWall.renderOrder = 3
+  rootGroup.add(temporalInnerWall)
+  recolorTemporalInnerWall()
+}
+
+function recolorTemporalInnerWall() {
+  if (!temporalInnerWall) return
+  const colors = temporalInnerWall.geometry.attributes.color
+  for (let sliceIndex = 0; sliceIndex < ENVELOPE_STEPS; sliceIndex += 1) {
+    const ratio = sliceIndex / (ENVELOPE_STEPS - 1)
+    for (let angular = 0; angular <= ANGULAR_STEPS; angular += 1) {
+      const angle = angular / ANGULAR_STEPS * Math.PI * 2
+      const color = colorAt(fieldAt(angle, ratio)).lerp(new THREE.Color('#020813'), 0.12)
+      const vertex = sliceIndex * (ANGULAR_STEPS + 1) + angular
+      colors.setXYZ(vertex, color.r, color.g, color.b)
+    }
+  }
+  colors.needsUpdate = true
+}
+
 function rebuildTemporalTrajectories() {
   if (!rootGroup) return
   if (temporalTrajectoryGroup) {
@@ -386,14 +445,14 @@ function rebuildTemporalTrajectories() {
 
 function updateTemporalTrajectories() {
   if (!temporalTrajectoryGroup) return
-  const currentIndex = currentSliceIndex.value
-  const endIndex = props.viewMode === 'cloud' ? SLICE_COUNT - 1 : currentIndex
-  temporalTrajectoryGroup.visible = props.viewMode !== 'section' && endIndex > 0
+  const endRatio = currentRatio.value
+  const endIndex = Math.ceil(endRatio * (ENVELOPE_STEPS - 1))
+  temporalTrajectoryGroup.visible = props.viewMode !== 'section' && endRatio > 0
   temporalTrajectories.forEach((item) => {
     const angle = THREE.MathUtils.degToRad(Number(item.borehole.angleDeg || 0))
     const points = []
     for (let sliceIndex = 0; sliceIndex <= endIndex; sliceIndex += 1) {
-      const ratio = sliceIndex / (SLICE_COUNT - 1)
+      const ratio = Math.min(sliceIndex / (ENVELOPE_STEPS - 1), endRatio)
       const x = (ratio - 0.5) * VOLUME_LENGTH
       const radius = TUNNEL_RADIUS + (CLOUD_RADIUS - TUNNEL_RADIUS) * ratio
       points.push(pointOnRing(radius, angle, x))
@@ -487,6 +546,7 @@ function recolorVolume() {
     colors.needsUpdate = true
   })
   recolorTemporalEnvelope()
+  recolorTemporalInnerWall()
 }
 
 function normalizedFieldAtVertex(angle, radialRatio) {
@@ -531,11 +591,15 @@ function updateVolumeState() {
     sliceItem.label.element.classList.toggle('selected', selected)
     sliceItem.label.element.classList.toggle('current', current)
   })
-  if (temporalEnvelope) {
+  if (temporalEnvelope && temporalInnerWall) {
     const intervalIndexCount = ANGULAR_STEPS * 6
-    const allIntervals = ENVELOPE_STEPS - 1
-    temporalEnvelope.geometry.setDrawRange(0, allIntervals * intervalIndexCount)
-    temporalEnvelope.visible = props.viewMode === 'cloud'
+    const revealedIntervals = Math.ceil(currentRatio.value * (ENVELOPE_STEPS - 1))
+    const revealedIndexCount = revealedIntervals * intervalIndexCount
+    temporalEnvelope.geometry.setDrawRange(0, revealedIndexCount)
+    temporalInnerWall.geometry.setDrawRange(0, revealedIndexCount)
+    const showContinuousWalls = props.viewMode === 'cloud' && revealedIntervals > 0
+    temporalEnvelope.visible = showContinuousWalls
+    temporalInnerWall.visible = showContinuousWalls
   }
   updateTemporalTrajectories()
   updateAnalysisBoreholes()
@@ -631,7 +695,9 @@ function updateViewMode() {
   tunnelMesh.material.opacity = props.viewMode === 'section' ? 0.012 : 0.028
   tunnelWire.material.opacity = props.viewMode === 'section' ? 0.008 : 0.012
   temporalCage.visible = props.viewMode !== 'section'
-  if (temporalEnvelope) temporalEnvelope.visible = props.viewMode === 'cloud'
+  const showContinuousWalls = props.viewMode === 'cloud' && currentRatio.value > 0
+  if (temporalEnvelope) temporalEnvelope.visible = showContinuousWalls
+  if (temporalInnerWall) temporalInnerWall.visible = showContinuousWalls
   recolorVolume()
   updateVolumeState()
 }
@@ -706,6 +772,7 @@ function init() {
     createTunnelReference()
     createTemporalCage()
     createTemporalEnvelope()
+    createTemporalInnerWall()
     createTemporalVolume()
     rebuildTemporalTrajectories()
     rebuildAnalysisBoreholes()
