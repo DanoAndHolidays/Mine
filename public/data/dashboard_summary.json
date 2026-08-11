@@ -14,8 +14,8 @@
   "models": [
     {
       "id": "v1",
-      "name": "V1 多尺度ExtraTrees",
-      "name_en": "Multi-scale ExtraTrees",
+      "name": "GBDT",
+      "name_en": "GBDT",
       "type": "传统机器学习",
       "features": "80维物理统计特征",
       "damage_accuracy": 0.727,
@@ -26,8 +26,8 @@
     },
     {
       "id": "v2",
-      "name": "V2 CNN-BiLSTM",
-      "name_en": "CNN-BiLSTM Sequence",
+      "name": "CNN-LSTM",
+      "name_en": "CNN-LSTM",
       "type": "深度学习",
       "features": "100点序列窗口",
       "damage_accuracy": 0.688,
@@ -38,8 +38,8 @@
     },
     {
       "id": "v3",
-      "name": "V3 物理融合CNN-BiLSTM",
-      "name_en": "Physics Fusion CNN-BiLSTM",
+      "name": "PF-CL-MTIM",
+      "name_en": "PF-CL-MTIM",
       "type": "物理融合深度学习",
       "features": "序列+80维物理特征",
       "damage_accuracy": 0.712,
@@ -71,7 +71,7 @@
     "segments_per_file": 5,
     "stress_levels": [0, 10, 20, 30, 40],
     "damage_sequence": [80, 60, 40, 20, 0],
-    "best_model": "V3 物理融合CNN-BiLSTM",
+    "best_model": "PF-CL-MTIM",
     "best_damage_acc": 0.919,
     "best_stress_acc": 0.987,
     "best_file": "VTEST_S00 (V1) / VTEST_S40 (V1)"
