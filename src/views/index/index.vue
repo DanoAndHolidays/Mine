@@ -218,29 +218,30 @@
                 <span>{{ ((activeModel?.stress_accuracy || 0) * 100).toFixed(1) }}%</span>
                 <small>应力</small>
               </div>
-              <div class="gauge-ring state-gauge" :style="{ '--pct': activeModel?.state_accuracy * 100 }">
-                <span>{{ ((activeModel?.state_accuracy || 0) * 100).toFixed(1) }}%</span>
-                <small>状态</small>
+              <div class="gauge-ring state-gauge" :style="{ '--pct': activeModel?.macro_f1 * 100 }">
+                <span>{{ ((activeModel?.macro_f1 || 0) * 100).toFixed(1) }}%</span>
+                <small>宏F1</small>
               </div>
             </div>
           </div>
           <div class="zone-legend">
             <div><i class="plastic-color"></i><span>损伤准确率</span><strong>{{ ((activeModel?.damage_accuracy || 0) * 100).toFixed(1) }}%</strong></div>
             <div><i class="damage-color"></i><span>应力准确率</span><strong>{{ ((activeModel?.stress_accuracy || 0) * 100).toFixed(1) }}%</strong></div>
-            <div><i class="elastic-color"></i><span>F1 分数</span><strong>{{ ((activeModel?.macro_f1 || 0) * 100).toFixed(1) }}%</strong></div>
+            <div><i class="elastic-color"></i><span>状态宏 F1</span><strong>{{ ((activeModel?.macro_f1 || 0) * 100).toFixed(1) }}%</strong></div>
           </div>
         </section>
 
         <!-- Panel 05: 模型对比 -->
         <section class="panel sensor-panel">
           <PanelTitle code="05" title="三模型性能对比" sub="MODEL COMPARISON" />
-          <div class="sensor-head"><span>模型</span><span>损伤Acc</span><span>应力Acc</span></div>
+          <div class="sensor-head"><span>模型</span><span>损伤Acc</span><span>应力Acc</span><span>宏F1</span></div>
           <div class="sensor-item" v-for="m in store.models" :key="m.id"
             :class="{ active: store.selectedModel === m.id }"
             @click="store.selectedModel = m.id">
             <span><i :class="store.selectedModel === m.id ? 'active' : ''"></i>{{ m.name_en }}</span>
             <strong>{{ (m.damage_accuracy * 100).toFixed(1) }}%</strong>
             <em :class="m.stress_accuracy > 0.8 ? 'good' : 'normal'">{{ (m.stress_accuracy * 100).toFixed(1) }}%</em>
+            <b>{{ (m.macro_f1 * 100).toFixed(1) }}%</b>
           </div>
         </section>
 
@@ -960,7 +961,7 @@ onBeforeUnmount(() => {
 .plastic-color { background: #ff6725; }.damage-color { background: #ffc52a; }.elastic-color { background: #36ce74; }
 
 .sensor-panel { flex: 1; }
-.sensor-head, .sensor-item { display: grid; grid-template-columns: 1.2fr .55fr .55fr; align-items: center; column-gap: 5px; padding: 0 12px; }
+.sensor-head, .sensor-item { display: grid; grid-template-columns: 1.15fr .48fr .48fr .48fr; align-items: center; column-gap: 4px; padding: 0 10px; }
 .sensor-head { height: 25px; color: #426d82; font-size: 7px; border-bottom: 1px solid rgba(68, 147, 180, .12); }
 .sensor-head span:nth-child(n+2) { text-align: right; }
 .sensor-item { height: calc((100% - 66px) / 3); min-height: 32px; color: #89adbd; font-size: 8px; border-bottom: 1px solid rgba(68, 147, 180, .08); cursor: pointer; transition: background .2s; }
@@ -970,6 +971,7 @@ onBeforeUnmount(() => {
 .sensor-item > span i.active { background: #48e59d; box-shadow: 0 0 5px #48e59d; }
 .sensor-item strong { text-align: right; color: #d9f6ff; font: 11px Electronic, monospace; }
 .sensor-item em { justify-self: end; padding: 2px 4px; font-size: 7px; font-style: normal; }
+.sensor-item b { justify-self: end; color: #f2c96e; font: 9px Electronic, monospace; font-weight: 500; }
 .sensor-item em.good { color: #4bdc9c; background: rgba(49, 219, 146, .08); }
 .sensor-item em.normal { color: #ffb33a; background: rgba(255, 171, 48, .1); }
 

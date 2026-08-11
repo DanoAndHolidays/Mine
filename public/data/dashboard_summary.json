@@ -18,10 +18,10 @@
       "name_en": "GBDT",
       "type": "传统机器学习",
       "features": "80维物理统计特征",
-      "damage_accuracy": 0.727,
-      "stress_accuracy": 0.852,
-      "state_accuracy": 0.679,
-      "macro_f1": 0.680,
+      "damage_accuracy": 0.6973,
+      "stress_accuracy": 0.8371,
+      "state_accuracy": null,
+      "macro_f1": 0.6236,
       "confidence": null
     },
     {
@@ -30,10 +30,10 @@
       "name_en": "CNN-LSTM",
       "type": "深度学习",
       "features": "100点序列窗口",
-      "damage_accuracy": 0.688,
-      "stress_accuracy": 0.792,
-      "state_accuracy": 0.682,
-      "macro_f1": 0.666,
+      "damage_accuracy": 0.7300,
+      "stress_accuracy": 0.8519,
+      "state_accuracy": null,
+      "macro_f1": 0.7156,
       "confidence": 0.754
     },
     {
@@ -42,10 +42,10 @@
       "name_en": "PF-CL-MTIM",
       "type": "物理融合深度学习",
       "features": "序列+80维物理特征",
-      "damage_accuracy": 0.712,
-      "stress_accuracy": 0.826,
-      "state_accuracy": 0.693,
-      "macro_f1": 0.684,
+      "damage_accuracy": 0.7997,
+      "stress_accuracy": 0.8991,
+      "state_accuracy": null,
+      "macro_f1": 0.7894,
       "confidence": 0.932
     }
   ],
@@ -79,8 +79,8 @@
   "key_findings": [
     "围压应力越高，钻进扭矩和推力越大",
     "煤体损伤越严重，钻进扭矩和推力越低",
-    "应力分类准确率(85.2%)显著高于损伤分类(72.7%)",
-    "物理融合模型(V3)综合性能最优，置信度达93.2%",
+    "PF-CL-MTIM 应力分类准确率为 89.91%，损伤分类准确率为 79.97%",
+    "PF-CL-MTIM 状态宏 F1 为 78.94%，三模型中综合性能最优",
     "低应力(0-10MPa)条件下损伤识别精度最高",
     "拼接钻孔测试验证了模型的跨条件泛化能力"
   ]
