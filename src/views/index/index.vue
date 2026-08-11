@@ -16,7 +16,7 @@
       </div>
       <div class="system-state">
         <div class="clock"><strong>{{ clockTime }}</strong><small>{{ clockDate }}</small></div>
-        <div class="online"><i></i><span>双源数据已接入<br><small>VTEST4 + FITTING CONNECTED</small></span></div>
+        <div class="online"><i></i><span>双源数据已接入<br><small>VTEST4 / FITTING</small></span></div>
         <button class="import-data-trigger" type="button" @click="openImportModal">
           <span class="import-trigger-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24"><path d="M12 3v11m0-11L8 7m4-4 4 4M5 13v6h14v-6" /></svg>
@@ -1136,9 +1136,10 @@ onBeforeUnmount(() => {
 .clock { padding-right: 15px; }
 .clock strong { color: #e0e9eb; font-size: 16px; }
 .clock small { color: #6d828b; }
-.online { min-width: 0; color: #b8c9ce; font-size: 9px; }
+.online { min-width: 0; color: #b8c9ce; font-size: 9px; overflow: hidden; }
 .online i { width: 7px; height: 7px; background: #76cba8; box-shadow: 0 0 0 4px rgba(118, 203, 168, .08); }
-.online small { display: inline-block; max-width: 150px; overflow: hidden; color: #637c86; white-space: nowrap; text-overflow: ellipsis; }
+.online span { min-width: 0; overflow: hidden; white-space: nowrap; }
+.online small { display: block; max-width: 108px; overflow: hidden; color: #637c86; white-space: nowrap; text-overflow: ellipsis; }
 
 .dashboard-body {
   grid-template-columns: clamp(272px, 18.7vw, 356px) minmax(0, 1fr) clamp(272px, 18.7vw, 356px);
