@@ -17,6 +17,12 @@
       <div class="system-state">
         <div class="clock"><strong>{{ clockTime }}</strong><small>{{ clockDate }}</small></div>
         <div class="online"><i></i><span>双源数据已接入<br><small>VTEST4 + FITTING CONNECTED</small></span></div>
+        <button class="import-data-trigger" type="button" @click="openImportModal">
+          <span class="import-trigger-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 3v11m0-11L8 7m4-4 4 4M5 13v6h14v-6" /></svg>
+          </span>
+          <span><strong>导入数据</strong><small>IMPORT DATA</small></span>
+        </button>
       </div>
     </header>
 
@@ -288,6 +294,113 @@
       </div>
       <div class="data-provenance">SOURCE · {{ store.ringCloud?.meta.sources?.join(' + ') || 'LOADING' }} · {{ store.ringCloud?.meta.fittingMethod || '' }}</div>
     </footer>
+
+    <Transition name="import-modal">
+      <div v-if="importModalOpen" class="import-modal-backdrop" @mousedown.self="closeImportModal">
+        <section class="import-dialog" role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
+          <i class="dialog-corner tl"></i><i class="dialog-corner tr"></i><i class="dialog-corner bl"></i><i class="dialog-corner br"></i>
+          <header class="import-dialog-header">
+            <div class="dialog-index"><span>07</span><small>DATA ACCESS</small></div>
+            <div>
+              <p>DATA INGESTION CONSOLE</p>
+              <h2 id="import-dialog-title">导入实验数据</h2>
+            </div>
+            <div class="dialog-status"><i></i><span>本地安全模式<small>LOCAL SANDBOX</small></span></div>
+            <button class="dialog-close" type="button" aria-label="关闭导入数据弹窗" @click="closeImportModal">×</button>
+          </header>
+
+          <div class="import-steps" :class="{ processing: importStatus === 'processing', success: importStatus === 'success' }">
+            <div class="active"><span>01</span><p>选择数据源<small>SELECT SOURCE</small></p></div>
+            <i></i>
+            <div :class="{ active: selectedImportFile }"><span>02</span><p>字段配置<small>FIELD MAPPING</small></p></div>
+            <i></i>
+            <div :class="{ active: importStatus !== 'idle' }"><span>03</span><p>校验接入<small>VALIDATE</small></p></div>
+          </div>
+
+          <div class="import-dialog-body">
+            <div class="import-source-column">
+              <div
+                class="file-drop-zone"
+                :class="{ dragging: isDraggingFile, filled: selectedImportFile }"
+                @click="fileInput?.click()"
+                @dragover.prevent="isDraggingFile = true"
+                @dragleave.prevent="isDraggingFile = false"
+                @drop.prevent="handleFileDrop"
+              >
+                <input ref="fileInput" type="file" accept=".csv,.xlsx,.json" @change="handleFileChange" />
+                <div class="drop-visual">
+                  <svg viewBox="0 0 48 48"><path d="M14 39h22a8 8 0 0 0 1-15.9A13 13 0 0 0 12.4 19 10 10 0 0 0 14 39Z"/><path d="M24 31V17m0 0-6 6m6-6 6 6"/></svg>
+                  <i></i><i></i><i></i>
+                </div>
+                <template v-if="!selectedImportFile">
+                  <strong>拖拽数据文件至此处</strong>
+                  <p>或点击浏览本地文件</p>
+                  <button type="button" tabindex="-1">选择数据文件</button>
+                </template>
+                <template v-else>
+                  <strong>{{ selectedImportFile.name }}</strong>
+                  <p>{{ selectedImportFile.size }} · 等待接入</p>
+                  <button type="button" tabindex="-1">更换文件</button>
+                </template>
+              </div>
+              <div class="format-support">
+                <span>支持格式</span>
+                <b>CSV</b><b>XLSX</b><b>JSON</b>
+                <em>单文件 ≤ 50 MB</em>
+              </div>
+              <button v-if="!selectedImportFile" class="demo-file-button" type="button" @click="useDemoFile">
+                <span>◎</span><p>载入示例数据<small>VTEST_S60 · 12,480 RECORDS</small></p><em>→</em>
+              </button>
+              <div v-else class="file-validation-card">
+                <span class="validation-icon">✓</span>
+                <p><strong>文件格式校验通过</strong><small>检测到 12,480 条记录 · 9 个字段</small></p>
+                <em>READY</em>
+              </div>
+            </div>
+
+            <div class="import-config-column">
+              <div class="config-heading"><span>接入配置</span><small>INGESTION SETTINGS</small></div>
+              <label class="config-field">
+                <span>数据类型<small>DATA TYPE</small></span>
+                <select v-model="importConfig.dataType"><option>随钻时序数据</option><option>模型预测结果</option><option>钻孔空间信息</option></select>
+              </label>
+              <label class="config-field">
+                <span>目标数据集<small>TARGET DATASET</small></span>
+                <select v-model="importConfig.dataset"><option>Vtest4 感知数据</option><option>新建实验数据集</option></select>
+              </label>
+              <div class="field-mapping">
+                <div class="mapping-head"><span>字段映射预览</span><small>AUTO MATCHED</small></div>
+                <div><code>depth_cm</code><i>→</i><span>钻进深度</span><em>cm</em></div>
+                <div><code>torque_nm</code><i>→</i><span>钻进扭矩</span><em>N·m</em></div>
+                <div><code>stress_mpa</code><i>→</i><span>孔内应力</span><em>MPa</em></div>
+                <button type="button">查看全部 9 个字段 <span>↗</span></button>
+              </div>
+              <label class="switch-setting">
+                <span><strong>首行作为字段名称</strong><small>自动识别 CSV / XLSX 表头</small></span>
+                <input v-model="importConfig.useHeader" type="checkbox" /><i></i>
+              </label>
+            </div>
+          </div>
+
+          <div v-if="importStatus !== 'idle'" class="import-progress" :class="importStatus">
+            <div><span>{{ importStatus === 'success' ? '数据预检完成' : importStage }}</span><strong>{{ importProgress }}%</strong></div>
+            <i><b :style="{ width: `${importProgress}%` }"></b></i>
+            <p>{{ importStatus === 'success' ? '演示导入已完成，当前看板数据保持不变' : '正在构建数据索引与字段映射，请稍候…' }}</p>
+          </div>
+
+          <footer class="import-dialog-footer">
+            <div class="demo-notice"><span>i</span><p>当前为功能展示模式<small>不会覆盖或写入现有数据</small></p></div>
+            <button class="cancel-import" type="button" @click="closeImportModal">取消</button>
+            <button class="confirm-import" type="button" :disabled="!selectedImportFile || importStatus === 'processing'" @click="simulateImport">
+              <span v-if="importStatus === 'processing'" class="button-spinner"></span>
+              <span v-else-if="importStatus === 'success'">✓</span>
+              <span v-else>↥</span>
+              {{ importStatus === 'processing' ? '正在接入' : importStatus === 'success' ? '预检完成' : '开始导入' }}
+            </button>
+          </footer>
+        </section>
+      </div>
+    </Transition>
   </main>
 </template>
 
@@ -318,6 +431,88 @@ const now = ref(new Date())
 const cloudSample = ref({ borehole: null, sample: null })
 const findingIndex = ref(0)
 const findingTimer = ref(null)
+
+// ---- import data showcase ----
+const importModalOpen = ref(false)
+const fileInput = ref(null)
+const selectedImportFile = ref(null)
+const isDraggingFile = ref(false)
+const importStatus = ref('idle')
+const importProgress = ref(0)
+const importStage = ref('正在校验数据结构')
+const importTimer = ref(null)
+const importConfig = ref({
+  dataType: '随钻时序数据',
+  dataset: 'Vtest4 感知数据',
+  useHeader: true
+})
+
+function openImportModal() {
+  importModalOpen.value = true
+}
+
+function closeImportModal() {
+  if (importStatus.value === 'processing') return
+  importModalOpen.value = false
+}
+
+function formatFileSize(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 KB'
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  return `${Math.max(1, Math.round(bytes / 1024))} KB`
+}
+
+function selectImportFile(file) {
+  if (!file) return
+  selectedImportFile.value = { name: file.name, size: formatFileSize(file.size) }
+  importStatus.value = 'idle'
+  importProgress.value = 0
+}
+
+function handleFileChange(event) {
+  selectImportFile(event.target.files?.[0])
+  event.target.value = ''
+}
+
+function handleFileDrop(event) {
+  isDraggingFile.value = false
+  selectImportFile(event.dataTransfer?.files?.[0])
+}
+
+function useDemoFile() {
+  selectedImportFile.value = { name: 'VTEST_S60_drilling.csv', size: '1.8 MB' }
+  importStatus.value = 'idle'
+  importProgress.value = 0
+}
+
+function stopImportSimulation() {
+  if (importTimer.value) {
+    window.clearInterval(importTimer.value)
+    importTimer.value = null
+  }
+}
+
+function simulateImport() {
+  if (!selectedImportFile.value || importStatus.value === 'processing') return
+  stopImportSimulation()
+  importStatus.value = 'processing'
+  importProgress.value = 6
+  importStage.value = '正在校验数据结构'
+  importTimer.value = window.setInterval(() => {
+    const next = Math.min(100, importProgress.value + Math.ceil(Math.random() * 8))
+    importProgress.value = next
+    if (next >= 72) importStage.value = '正在构建字段映射'
+    else if (next >= 38) importStage.value = '正在扫描数据记录'
+    if (next >= 100) {
+      stopImportSimulation()
+      importStatus.value = 'success'
+    }
+  }, 160)
+}
+
+function handleImportKeydown(event) {
+  if (event.key === 'Escape' && importModalOpen.value) closeImportModal()
+}
 
 // ---- evolution state ----
 const evolutionProgress = ref(0)
@@ -501,13 +696,16 @@ const clockDate = computed(() => now.value.toLocaleDateString('zh-CN', { year: '
 const clockTimer = window.setInterval(() => { now.value = new Date() }, 1000)
 
 onMounted(async () => {
+  window.addEventListener('keydown', handleImportKeydown)
   await store.loadAll()
   startEvolution()
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleImportKeydown)
   window.clearInterval(clockTimer)
   stopEvolution()
+  stopImportSimulation()
   if (findingTimer.value) window.clearInterval(findingTimer.value)
 })
 </script>
@@ -1260,5 +1458,254 @@ onBeforeUnmount(() => {
 @media (max-width: 1500px) {
   .pane-legend.cloud-legend { top: 64px; height: 128px; }
   .fit-method { gap: 4px; font-size: 7px; }
+}
+
+/* Data import entry */
+.import-data-trigger {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 9px;
+  height: 42px;
+  min-width: 116px;
+  padding: 0 12px 0 9px;
+  color: #d8e8eb;
+  font-family: inherit;
+  text-align: left;
+  background:
+    linear-gradient(135deg, rgba(115, 190, 204, .14), rgba(43, 95, 109, .05)),
+    rgba(7, 20, 28, .86);
+  border: 1px solid rgba(116, 193, 207, .38);
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  cursor: pointer;
+  transition: color .2s ease, border-color .2s ease, background .2s ease, transform .2s ease;
+}
+.import-data-trigger::after {
+  content: '';
+  position: absolute;
+  right: 8px;
+  bottom: 5px;
+  width: 22px;
+  height: 1px;
+  background: var(--gold);
+  opacity: .55;
+}
+.import-data-trigger:hover {
+  color: #f1f7f8;
+  border-color: rgba(129, 222, 237, .7);
+  background: linear-gradient(135deg, rgba(115, 190, 204, .22), rgba(43, 95, 109, .08)), rgba(7, 20, 28, .9);
+  transform: translateY(-1px);
+}
+.import-trigger-icon {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  color: #87d5e2;
+  background: rgba(111, 190, 204, .08);
+  border: 1px solid rgba(122, 205, 219, .22);
+}
+.import-trigger-icon svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: square; stroke-linejoin: miter; }
+.import-data-trigger > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.import-data-trigger strong { font-size: 11px; font-weight: 600; letter-spacing: 1.3px; white-space: nowrap; }
+.import-data-trigger small { color: #657f89; font-size: 6px; letter-spacing: 1.2px; white-space: nowrap; }
+
+/* Data import modal */
+.import-modal-backdrop {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  background: rgba(1, 7, 11, .76);
+  backdrop-filter: blur(9px);
+}
+.import-modal-backdrop::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(104, 160, 174, .035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(104, 160, 174, .035) 1px, transparent 1px);
+  background-size: 36px 36px;
+}
+.import-dialog {
+  position: relative;
+  width: min(900px, calc(100vw - 56px));
+  max-height: calc(100vh - 56px);
+  overflow: hidden;
+  color: #dce8eb;
+  background:
+    linear-gradient(120deg, rgba(102, 167, 181, .045), transparent 38%),
+    linear-gradient(160deg, rgba(8, 23, 32, .99), rgba(4, 14, 21, .99));
+  border: 1px solid rgba(129, 181, 193, .36);
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .58), inset 0 0 56px rgba(57, 116, 130, .045);
+}
+.import-dialog::after {
+  content: '';
+  position: absolute;
+  z-index: 2;
+  left: 70px;
+  right: 70px;
+  top: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #79ccda, var(--gold), #79ccda, transparent);
+  opacity: .75;
+}
+.dialog-corner { position: absolute; z-index: 4; width: 18px; height: 18px; pointer-events: none; }
+.dialog-corner.tl { top: 6px; left: 6px; border-top: 1px solid var(--gold); border-left: 1px solid var(--gold); }
+.dialog-corner.tr { top: 6px; right: 6px; border-top: 1px solid var(--gold); border-right: 1px solid var(--gold); }
+.dialog-corner.bl { bottom: 6px; left: 6px; border-bottom: 1px solid var(--gold); border-left: 1px solid var(--gold); }
+.dialog-corner.br { bottom: 6px; right: 6px; border-bottom: 1px solid var(--gold); border-right: 1px solid var(--gold); }
+
+.import-dialog-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 15px;
+  height: 78px;
+  padding: 0 22px;
+  border-bottom: 1px solid rgba(126, 166, 178, .14);
+  background: linear-gradient(90deg, rgba(104, 162, 176, .08), transparent 58%);
+}
+.dialog-index { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 48px; height: 43px; border: 1px solid rgba(227, 184, 90, .35); background: rgba(227, 184, 90, .05); clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px)); }
+.dialog-index span { color: var(--gold); font: 16px/1 Electronic, monospace; }
+.dialog-index small { margin-top: 5px; color: #7e745c; font-size: 5px; letter-spacing: .8px; }
+.import-dialog-header p { margin: 0 0 3px; color: #6b8791; font-size: 7px; letter-spacing: 2.2px; }
+.import-dialog-header h2 { margin: 0; color: #eef5f6; font-size: 20px; font-weight: 500; letter-spacing: 3px; }
+.dialog-status { display: flex; align-items: center; gap: 8px; padding: 7px 11px; border-left: 1px solid rgba(123, 159, 170, .17); }
+.dialog-status > i { width: 7px; height: 7px; border-radius: 50%; background: #77c9a9; box-shadow: 0 0 0 4px rgba(119, 201, 169, .08); }
+.dialog-status span { display: flex; flex-direction: column; gap: 2px; color: #a9bec4; font-size: 9px; }
+.dialog-status small { color: #5b747e; font-size: 6px; letter-spacing: 1px; }
+.dialog-close { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; color: #75909a; font: 23px/1 Arial, sans-serif; background: rgba(103, 144, 156, .04); border: 1px solid rgba(123, 159, 170, .17); cursor: pointer; transition: .2s ease; }
+.dialog-close:hover { color: #e8f1f3; border-color: rgba(227, 184, 90, .45); background: rgba(227, 184, 90, .06); }
+
+.import-steps { display: grid; grid-template-columns: auto 1fr auto 1fr auto; align-items: center; gap: 12px; height: 64px; padding: 0 68px; background: rgba(2, 10, 15, .32); border-bottom: 1px solid rgba(125, 161, 172, .1); }
+.import-steps > div { display: flex; align-items: center; gap: 9px; opacity: .45; transition: opacity .25s ease; }
+.import-steps > div.active { opacity: 1; }
+.import-steps > div > span { display: grid; place-items: center; width: 28px; height: 28px; color: #758c95; font: 8px Electronic, monospace; border: 1px solid rgba(121, 157, 168, .26); clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px); }
+.import-steps > div.active > span { color: var(--gold); border-color: rgba(227, 184, 90, .55); background: rgba(227, 184, 90, .055); }
+.import-steps p { margin: 0; color: #b7c8cc; font-size: 10px; white-space: nowrap; }
+.import-steps p small { display: block; margin-top: 2px; color: #607983; font-size: 6px; letter-spacing: 1px; }
+.import-steps > i { height: 1px; background: linear-gradient(90deg, rgba(106, 150, 162, .35), rgba(106, 150, 162, .08)); }
+
+.import-dialog-body { display: grid; grid-template-columns: 1.05fr .95fr; min-height: 310px; }
+.import-source-column { padding: 20px 23px 17px; border-right: 1px solid rgba(124, 161, 172, .12); }
+.file-drop-zone { position: relative; display: flex; height: 198px; flex-direction: column; align-items: center; justify-content: center; padding: 16px; overflow: hidden; text-align: center; background: rgba(72, 121, 135, .035); border: 1px dashed rgba(117, 184, 198, .36); cursor: pointer; transition: .22s ease; }
+.file-drop-zone::before, .file-drop-zone::after { content: ''; position: absolute; width: 25px; height: 25px; border-color: rgba(227, 184, 90, .5); pointer-events: none; }
+.file-drop-zone::before { left: 6px; top: 6px; border-left: 1px solid; border-top: 1px solid; }
+.file-drop-zone::after { right: 6px; bottom: 6px; border-right: 1px solid; border-bottom: 1px solid; }
+.file-drop-zone:hover, .file-drop-zone.dragging { background: rgba(88, 157, 172, .085); border-color: rgba(125, 214, 231, .68); }
+.file-drop-zone.filled { background: rgba(91, 151, 164, .055); border-style: solid; }
+.file-drop-zone input { display: none; }
+.drop-visual { position: relative; width: 62px; height: 56px; margin-bottom: 8px; }
+.drop-visual svg { position: relative; z-index: 2; width: 46px; height: 46px; fill: none; stroke: #79bdca; stroke-width: 1.2; stroke-linecap: square; }
+.drop-visual i { position: absolute; left: 7px; bottom: 3px; width: 49px; height: 1px; background: rgba(115, 185, 198, .16); }
+.drop-visual i:nth-of-type(2) { left: 14px; bottom: 0; width: 35px; }
+.drop-visual i:nth-of-type(3) { left: 22px; bottom: -3px; width: 19px; }
+.file-drop-zone > strong { display: block; max-width: 100%; overflow: hidden; color: #dce8ea; font-size: 13px; font-weight: 500; letter-spacing: .6px; white-space: nowrap; text-overflow: ellipsis; }
+.file-drop-zone > p { margin: 5px 0 9px; color: #6a838d; font-size: 9px; }
+.file-drop-zone > button { height: 28px; padding: 0 14px; color: #a8d6de; font-family: inherit; font-size: 9px; background: rgba(104, 176, 190, .08); border: 1px solid rgba(114, 191, 205, .3); pointer-events: none; }
+.format-support { display: flex; align-items: center; gap: 6px; height: 32px; color: #657f89; font-size: 7px; }
+.format-support b { padding: 2px 5px; color: #8eabb3; font-size: 7px; font-weight: 500; background: rgba(106, 148, 160, .07); border: 1px solid rgba(117, 157, 169, .14); }
+.format-support em { margin-left: auto; color: #586f78; font-style: normal; }
+.demo-file-button, .file-validation-card { display: flex; align-items: center; width: 100%; height: 51px; padding: 0 12px; color: #a8bec4; font-family: inherit; text-align: left; background: rgba(96, 139, 151, .045); border: 1px solid rgba(119, 158, 169, .13); }
+.demo-file-button { cursor: pointer; }
+.demo-file-button:hover { background: rgba(100, 160, 173, .08); border-color: rgba(120, 187, 200, .26); }
+.demo-file-button > span, .validation-icon { display: grid; place-items: center; width: 28px; height: 28px; margin-right: 10px; color: var(--gold); background: rgba(227, 184, 90, .06); border: 1px solid rgba(227, 184, 90, .26); }
+.demo-file-button p, .file-validation-card p { display: flex; flex: 1; flex-direction: column; gap: 3px; margin: 0; font-size: 9px; }
+.demo-file-button small, .file-validation-card small { color: #5d7680; font-size: 6px; letter-spacing: .7px; }
+.demo-file-button em { color: #78939d; font-size: 15px; font-style: normal; }
+.file-validation-card { background: rgba(78, 148, 119, .045); border-color: rgba(102, 184, 147, .18); }
+.validation-icon { color: #7bc9a9; border-color: rgba(105, 190, 151, .28); background: rgba(81, 164, 126, .07); }
+.file-validation-card p strong { color: #b8d5c9; font-size: 9px; font-weight: 500; }
+.file-validation-card > em { color: #70b99b; font: 7px Electronic, monospace; font-style: normal; }
+
+.import-config-column { padding: 18px 23px 17px; }
+.config-heading { display: flex; align-items: baseline; gap: 8px; height: 25px; border-bottom: 1px solid rgba(119, 157, 169, .13); }
+.config-heading span { color: #d3e1e4; font-size: 11px; letter-spacing: 1px; }
+.config-heading small { color: #5b747e; font-size: 6px; letter-spacing: 1.2px; }
+.config-field { display: grid; grid-template-columns: 108px minmax(0, 1fr); align-items: center; gap: 12px; margin-top: 13px; }
+.config-field > span { color: #9eb2b8; font-size: 9px; }
+.config-field > span small { display: block; margin-top: 2px; color: #526b75; font-size: 6px; letter-spacing: .8px; }
+.config-field select { width: 100%; height: 34px; padding: 0 30px 0 10px; color: #bdcdd1; font-family: inherit; font-size: 9px; outline: none; background: #0a1b24; border: 1px solid rgba(120, 160, 172, .19); cursor: pointer; }
+.config-field select:focus { border-color: rgba(116, 199, 214, .48); }
+.field-mapping { margin-top: 14px; border: 1px solid rgba(119, 157, 169, .14); }
+.mapping-head { display: flex !important; align-items: center !important; justify-content: space-between; height: 30px !important; padding: 0 10px !important; background: rgba(100, 144, 156, .055); border-bottom: 1px solid rgba(119, 157, 169, .11) !important; }
+.mapping-head span { color: #9db1b7; font-size: 8px; }
+.mapping-head small { color: #71bda3; font-size: 6px; letter-spacing: .8px; }
+.field-mapping > div { display: grid; grid-template-columns: 1fr 18px 1fr 38px; align-items: center; height: 25px; padding: 0 10px; border-bottom: 1px solid rgba(119, 157, 169, .08); }
+.field-mapping code { color: #7fb8c4; font: 7px Consolas, monospace; }
+.field-mapping i { color: #596f77; font-size: 8px; font-style: normal; text-align: center; }
+.field-mapping div > span { color: #a8b9bd; font-size: 8px; }
+.field-mapping div > em { color: #5e7882; font-size: 7px; font-style: normal; text-align: right; }
+.field-mapping > button { width: 100%; height: 27px; color: #728c96; font-family: inherit; font-size: 7px; background: transparent; border: 0; cursor: pointer; }
+.field-mapping > button:hover { color: #a9c7cd; }
+.field-mapping > button span { margin-left: 3px; color: var(--gold); }
+.switch-setting { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; cursor: pointer; }
+.switch-setting > span { display: flex; flex-direction: column; gap: 2px; }
+.switch-setting strong { color: #9fb2b8; font-size: 8px; font-weight: 500; }
+.switch-setting small { color: #566f79; font-size: 6px; }
+.switch-setting input { display: none; }
+.switch-setting > i { position: relative; width: 32px; height: 17px; background: #132a33; border: 1px solid rgba(119, 157, 169, .24); transition: .2s ease; }
+.switch-setting > i::after { content: ''; position: absolute; left: 2px; top: 2px; width: 11px; height: 11px; background: #718790; transition: .2s ease; }
+.switch-setting input:checked + i { background: rgba(82, 153, 164, .2); border-color: rgba(112, 201, 216, .5); }
+.switch-setting input:checked + i::after { left: 17px; background: #7ccbd8; }
+
+.import-progress { margin: 0 23px 10px; padding: 10px 12px; background: rgba(77, 129, 142, .04); border: 1px solid rgba(118, 164, 176, .16); }
+.import-progress > div { display: flex; justify-content: space-between; color: #9bb1b7; font-size: 8px; }
+.import-progress > div strong { color: #9ad3dd; font: 9px Electronic, monospace; }
+.import-progress > i { display: block; height: 3px; margin-top: 7px; overflow: hidden; background: rgba(110, 151, 162, .12); }
+.import-progress > i b { display: block; height: 100%; background: linear-gradient(90deg, #477e8b, #79cad8, var(--gold)); transition: width .16s linear; }
+.import-progress > p { margin: 6px 0 0; color: #5b747e; font-size: 7px; }
+.import-progress.success { border-color: rgba(105, 184, 147, .22); background: rgba(76, 142, 115, .045); }
+.import-progress.success > div strong { color: #78c4a5; }
+.import-progress.success > i b { background: #70bd9d; }
+
+.import-dialog-footer { display: flex; align-items: center; gap: 9px; height: 68px; padding: 0 23px; background: rgba(2, 9, 14, .44); border-top: 1px solid rgba(122, 160, 171, .12); }
+.demo-notice { display: flex; flex: 1; align-items: center; gap: 9px; }
+.demo-notice > span { display: grid; place-items: center; width: 21px; height: 21px; color: var(--gold); font: italic 11px Georgia, serif; border: 1px solid rgba(227, 184, 90, .3); border-radius: 50%; }
+.demo-notice p { display: flex; flex-direction: column; gap: 2px; margin: 0; color: #9b8f75; font-size: 8px; }
+.demo-notice small { color: #5d6f73; font-size: 6px; }
+.cancel-import, .confirm-import { height: 36px; padding: 0 18px; color: #8ea5ac; font-family: inherit; font-size: 9px; letter-spacing: .6px; background: rgba(95, 137, 149, .04); border: 1px solid rgba(119, 159, 170, .2); cursor: pointer; }
+.cancel-import:hover { color: #d2dfe2; border-color: rgba(125, 177, 189, .38); }
+.confirm-import { min-width: 110px; color: #e2eef0; background: linear-gradient(135deg, rgba(92, 161, 175, .25), rgba(52, 105, 118, .1)); border-color: rgba(117, 202, 217, .48); clip-path: polygon(0 0, calc(100% - 7px) 0, 100% 7px, 100% 100%, 7px 100%, 0 calc(100% - 7px)); }
+.confirm-import:hover:not(:disabled) { background: linear-gradient(135deg, rgba(106, 185, 200, .34), rgba(52, 105, 118, .16)); }
+.confirm-import:disabled { color: #576b72; background: rgba(67, 89, 96, .05); border-color: rgba(103, 128, 136, .13); cursor: not-allowed; }
+.confirm-import > span { display: inline-block; margin-right: 5px; color: var(--gold); }
+.button-spinner { width: 10px; height: 10px; vertical-align: -2px; border: 1px solid rgba(122, 205, 218, .25); border-top-color: #7dcdda; border-radius: 50%; animation: importSpin .7s linear infinite; }
+@keyframes importSpin { to { transform: rotate(360deg); } }
+
+.import-modal-enter-active, .import-modal-leave-active { transition: opacity .22s ease; }
+.import-modal-enter-active .import-dialog, .import-modal-leave-active .import-dialog { transition: opacity .22s ease, transform .22s ease; }
+.import-modal-enter-from, .import-modal-leave-to { opacity: 0; }
+.import-modal-enter-from .import-dialog, .import-modal-leave-to .import-dialog { opacity: 0; transform: translateY(10px) scale(.985); }
+
+@media (max-width: 1500px) {
+  .top-header { grid-template-columns: 190px minmax(0, 1fr) 340px; }
+  .system-state { gap: 12px; }
+  .clock { padding-right: 12px; }
+}
+
+@media (max-width: 1220px) {
+  .top-header { grid-template-columns: 175px minmax(0, 1fr) 290px; }
+  .online { display: none; }
+}
+
+@media (max-height: 780px) {
+  .import-modal-backdrop { padding: 16px; }
+  .import-dialog { max-height: calc(100vh - 32px); }
+  .import-dialog-header { height: 66px; }
+  .import-steps { height: 52px; }
+  .import-dialog-body { min-height: 278px; }
+  .import-source-column, .import-config-column { padding-top: 13px; padding-bottom: 12px; }
+  .file-drop-zone { height: 164px; }
+  .drop-visual { height: 47px; margin-bottom: 3px; }
+  .drop-visual svg { height: 40px; }
+  .demo-file-button, .file-validation-card { height: 43px; }
+  .import-dialog-footer { height: 58px; }
 }
 </style>
