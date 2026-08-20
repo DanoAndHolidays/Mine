@@ -1,0 +1,103 @@
+{
+  "ready": true,
+  "source": {
+    "name": "xieyaqian.f3sav",
+    "type": "ITASCA SAVE FILE",
+    "product": "FLAC3D",
+    "version": "6.0",
+    "title": "Deep roadway variable-diameter pressure-relief base model",
+    "sizeBytes": 3872549718,
+    "sha256": "7A1A9BF40D0BD467CD4D014857450C894B8271BA460754A5F8C9823539760CA6"
+  },
+  "model": {
+    "url": "model.glb",
+    "coordinateUnit": "m",
+    "bounds": [
+      [
+        0.0,
+        -4.8,
+        0.0
+      ],
+      [
+        30.0,
+        4.8,
+        28.9
+      ]
+    ],
+    "roadwayFaceCount": 12288,
+    "exteriorFaceCount": 82752,
+    "roadwayVertexCount": 73728,
+    "exteriorVertexCount": 496512,
+    "activeZoneCount": 1548288,
+    "highStressZoneCount": 63648
+  },
+  "field": {
+    "name": "minimum principal stress magnitude",
+    "unit": "MPa",
+    "range": [
+      2.02357,
+      10.2844
+    ]
+  },
+  "targetIdentification": {
+    "method": "active zone stress >= average active-zone stress * 1.2",
+    "thresholdMultiplier": 1.2,
+    "averageStressMpa": 24.681,
+    "thresholdStressMpa": 29.6172,
+    "peakStressMpa": 46.6618,
+    "peakPosition": [
+      13.3,
+      3.95,
+      15.25
+    ],
+    "bounds": [
+      [
+        0.1,
+        -4.75,
+        9.23
+      ],
+      [
+        14.3,
+        4.75,
+        18.8786
+      ]
+    ],
+    "centroid": [
+      10.288235294116427,
+      -6.0283603147067325e-18,
+      13.325540874811358
+    ],
+    "source": "FLAC3D active zone centers",
+    "activeZoneCount": 1548288,
+    "highStressZoneCount": 63648,
+    "activeZoneRatio": 0.04110863095238095,
+    "volumeUrl": "high-stress-zones.bin",
+    "volumeEncoding": "float32-le: x,y,z,stressMpa",
+    "volumeRecordBytes": 16,
+    "volumeStressRangeMpa": [
+      29.6287,
+      46.6618
+    ],
+    "candidateHighStressZoneCount": 292224,
+    "roadwayInfluenceDistanceM": 5.0,
+    "selection": "stress threshold and cross-section distance to roadway surface"
+  },
+  "extraction": {
+    "rawFaceCount": 107328,
+    "duplicateFaceCount": 12288,
+    "uniqueFaceCount": 95040,
+    "bounds": [
+      [
+        0.0,
+        -4.8,
+        0.0
+      ],
+      [
+        30.0,
+        4.8,
+        28.9
+      ]
+    ]
+  },
+  "generatedAt": "2026-08-20T23:40:03.536505+08:00"
+}
