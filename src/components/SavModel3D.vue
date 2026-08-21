@@ -2,7 +2,7 @@
   <div ref="container" class="sav-model-canvas" :class="{ 'phase-after': isAfter }">
     <header class="model-header">
       <div>
-        <span>{{ isAfter ? 'RELIEF EFFECT / MAPPED' : 'FLAC3D / SAV' }}</span>
+        <span>{{ isAfter ? 'RELIEF EFFECT / FLAC3D SAV' : 'FLAC3D / SAV' }}</span>
         <strong>{{ modelTitle }}</strong>
         <small>{{ sourceSummary }}</small>
       </div>
@@ -21,7 +21,7 @@
       <span class="fallback-code">{{ loadState === 'pending' ? 'SAV / GLB' : 'LOAD ERROR' }}</span>
       <strong>{{ loadState === 'pending' ? 'SAV 转换产物尚未生成' : '模型加载失败' }}</strong>
       <p>{{ errorMessage }}</p>
-      <code>public/models/xieyaqian/model.glb</code>
+      <code>{{ manifestUrl }}</code>
     </div>
 
     <div v-if="loadState === 'ready'" class="stress-legend">
@@ -150,7 +150,6 @@ const autoRotate = ref(false)
 const targetActive = ref(props.defaultTargetActive)
 const renderedZoneCount = ref(0)
 const renderedPeakStress = ref(null)
-const POST_RELIEF_RESIDUAL_FACTOR = 0.35
 
 const surfaceOptions = [
   { value: 'roadway', label: '巷道表面' },
@@ -168,15 +167,12 @@ const modelTitle = computed(() => (
 const sourceSummary = computed(() => {
   const source = manifest.value?.source
   if (!source) return '正在读取模型清单'
-  if (isAfter.value) {
-    return `${source.name} · 基于卸压效率的演示映射`
-  }
   return `${source.name} · ${source.product} ${source.version}`
 })
 
 const stateLabel = computed(() => {
   if (loadState.value === 'ready') {
-    return isAfter.value ? '效果映射已载入' : '真实模型已载入'
+    return isAfter.value ? '卸压后模型已载入' : '卸压前模型已载入'
   }
   return ({
     loading: '模型载入中',
@@ -413,19 +409,12 @@ async function loadHighStressVolume() {
   if (values.length % 4 !== 0) throw new Error('高应力体单元数据格式无效')
 
   const sourceCount = values.length / 4
-  const average = Number(targetInfo.value?.averageStressMpa)
-  const threshold = Number(targetInfo.value?.thresholdStressMpa)
-  let count = 0
+  const count = sourceCount
   let peakStress = -Infinity
 
   for (let index = 0; index < sourceCount; index += 1) {
     const sourceStress = values[index * 4 + 3]
-    const displayStress = isAfter.value
-      ? average + (sourceStress - average) * POST_RELIEF_RESIDUAL_FACTOR
-      : sourceStress
-    if (isAfter.value && displayStress < threshold) continue
-    count += 1
-    peakStress = Math.max(peakStress, displayStress)
+    peakStress = Math.max(peakStress, sourceStress)
   }
 
   if (!count) throw new Error('当前阶段没有超过阈值的高应力体单元')
@@ -438,24 +427,20 @@ async function loadHighStressVolume() {
     targetInfo.value?.thresholdStressMpa,
     targetInfo.value?.peakStressMpa
   ]
-  const minimum = isAfter.value ? threshold : Number(sourceRange[0])
-  const maximum = isAfter.value ? peakStress : Number(sourceRange[1])
+  const minimum = Number(sourceRange[0])
+  const maximum = Number(sourceRange[1])
   const color = new THREE.Color()
   let targetIndex = 0
 
   for (let index = 0; index < sourceCount; index += 1) {
     const sourceOffset = index * 4
     const sourceStress = values[sourceOffset + 3]
-    const displayStress = isAfter.value
-      ? average + (sourceStress - average) * POST_RELIEF_RESIDUAL_FACTOR
-      : sourceStress
-    if (isAfter.value && displayStress < threshold) continue
 
     const targetOffset = targetIndex * 3
     positions[targetOffset] = values[sourceOffset]
     positions[targetOffset + 1] = values[sourceOffset + 1]
     positions[targetOffset + 2] = values[sourceOffset + 2]
-    stressColor(displayStress, minimum, maximum, color)
+    stressColor(sourceStress, minimum, maximum, color)
     colors[targetOffset] = color.r
     colors[targetOffset + 1] = color.g
     colors[targetOffset + 2] = color.b
@@ -551,7 +536,7 @@ async function loadModel() {
     manifest.value = await response.json()
 
     if (!manifest.value?.ready) {
-      setState('pending', '需要先在 FLAC3D 中恢复 xieyaqian.f3sav 并运行仓库内的导出脚本。')
+      setState('pending', '需要先完成 FLAC3D SAV 浏览器模型导出。')
       return
     }
 
@@ -561,7 +546,7 @@ async function loadModel() {
       modelUrl,
       async (gltf) => {
         modelRoot = gltf.scene
-        modelRoot.name = `xieyaqian-f3sav-${props.phase}`
+        modelRoot.name = `${manifest.value?.source?.name || 'flac3d-sav'}-${props.phase}`
         modelRoot.traverse((child) => {
           if (child.isMesh) configureMesh(child)
         })
@@ -733,19 +718,19 @@ onBeforeUnmount(() => {
 .model-header small { display: block; }
 .model-header > div:first-child > span {
   color: #7e9aa5;
-  font: 7px Electronic, monospace;
+  font: 9px Electronic, monospace;
   letter-spacing: 1.6px;
 }
 .model-header > div:first-child > strong {
   margin-top: 5px;
   color: #dce8ea;
-  font-size: 12px;
+  font-size: 15px;
   font-weight: 500;
 }
 .model-header > div:first-child > small {
   margin-top: 3px;
   color: #607a85;
-  font: 7px Electronic, monospace;
+  font: 9px Electronic, monospace;
 }
 .load-state {
   display: flex;
@@ -753,7 +738,7 @@ onBeforeUnmount(() => {
   gap: 6px;
   padding: 5px 8px;
   color: #78919b;
-  font-size: 7px;
+  font-size: 9px;
   background: rgba(5, 16, 23, .78);
   border: 1px solid rgba(125, 157, 168, .18);
 }
@@ -766,7 +751,7 @@ onBeforeUnmount(() => {
 }
 .load-state.ready i { background: #66c99e; box-shadow: 0 0 7px rgba(102, 201, 158, .7); }
 .load-state.error i { background: #d65d4a; box-shadow: 0 0 7px rgba(214, 93, 74, .7); }
-.load-state strong { color: #d9e5e7; font: 8px Electronic, monospace; }
+.load-state strong { color: #d9e5e7; font: 10px Electronic, monospace; }
 .loading-track {
   position: absolute;
   z-index: 5;
@@ -795,10 +780,10 @@ onBeforeUnmount(() => {
   background: rgba(5, 15, 22, .84);
   border: 1px solid rgba(128, 158, 168, .22);
 }
-.fallback-code { color: #73909a; font: 8px Electronic, monospace; letter-spacing: 2px; }
+.fallback-code { color: #73909a; font: 10px Electronic, monospace; letter-spacing: 2px; }
 .model-fallback strong { display: block; margin-top: 10px; color: #d9e5e7; font-size: 14px; font-weight: 500; }
-.model-fallback p { margin: 8px auto 12px; color: #7e959e; font-size: 9px; line-height: 1.65; }
-.model-fallback code { color: #bca366; font: 8px Electronic, monospace; }
+.model-fallback p { margin: 8px auto 12px; color: #7e959e; font-size: 11px; line-height: 1.65; }
+.model-fallback code { color: #bca366; font: 9px Electronic, monospace; }
 .model-toolbar {
   position: absolute;
   z-index: 5;
@@ -817,7 +802,7 @@ onBeforeUnmount(() => {
   height: 25px;
   padding: 0 9px;
   color: #758f99;
-  font-size: 8px;
+  font-size: 10px;
   background: rgba(103, 137, 148, .06);
   border: 1px solid transparent;
   cursor: pointer;
@@ -840,7 +825,7 @@ onBeforeUnmount(() => {
   gap: 4px 5px;
   align-items: center;
   color: #708993;
-  font-size: 7px;
+  font-size: 9px;
   text-align: center;
   pointer-events: none;
 }
@@ -932,11 +917,11 @@ onBeforeUnmount(() => {
 .target-identification button strong,
 .target-identification button small { display: block; min-width: 0; }
 .target-identification button span { flex: 1; }
-.target-identification button strong { color: #dbe7e9; font-size: 9px; font-weight: 500; }
+.target-identification button strong { color: #dbe7e9; font-size: 11px; font-weight: 500; }
 .target-identification button small {
   margin-top: 3px;
   color: #6f8992;
-  font: 7px Electronic, monospace;
+  font: 9px Electronic, monospace;
 }
 .target-identification.active button small { color: #b98678; }
 .target-results {
@@ -953,11 +938,11 @@ onBeforeUnmount(() => {
 }
 .target-results span,
 .target-results strong { display: block; }
-.target-results span { color: #657e87; font-size: 6px; white-space: nowrap; }
+.target-results span { color: #657e87; font-size: 8px; white-space: nowrap; }
 .target-results strong {
   margin-top: 3px;
   color: #dce6e8;
-  font: 8px Electronic, monospace;
+  font: 10px Electronic, monospace;
   white-space: nowrap;
 }
 .target-results strong.peak { color: #ff755b; }
@@ -968,9 +953,9 @@ onBeforeUnmount(() => {
   gap: 8px;
   padding: 6px 2px 0;
   color: #7f959d;
-  font-size: 6px;
+  font-size: 8px;
 }
-.target-results footer strong { margin: 0; color: #d4a14e; font-size: 6px; font-weight: 500; }
+.target-results footer strong { margin: 0; color: #d4a14e; font-size: 8px; font-weight: 500; }
 .target-marker {
   position: absolute;
   z-index: 7;
@@ -1017,8 +1002,8 @@ onBeforeUnmount(() => {
 }
 .target-marker strong,
 .target-marker small { display: block; white-space: nowrap; }
-.target-marker strong { color: #ffc478; font-size: 7px; font-weight: 500; }
-.target-marker small { margin-top: 2px; color: #fff0d2; font: 8px Electronic, monospace; }
+.target-marker strong { color: #ffc478; font-size: 9px; font-weight: 500; }
+.target-marker small { margin-top: 2px; color: #fff0d2; font: 10px Electronic, monospace; }
 @keyframes target-reticle {
   0%, 100% { transform: scale(.92); opacity: .72; }
   50% { transform: scale(1.08); opacity: 1; }
@@ -1038,9 +1023,9 @@ onBeforeUnmount(() => {
   background: rgba(5, 15, 22, .76);
   border-left: 1px solid rgba(114, 184, 197, .45);
 }
-.model-stats span { display: block; color: #657e88; font-size: 6px; }
-.model-stats strong { display: block; margin-top: 2px; color: #d7e3e5; font: 9px Electronic, monospace; }
-.model-stats small { color: #718a94; font-size: 6px; }
+.model-stats span { display: block; color: #657e88; font-size: 8px; }
+.model-stats strong { display: block; margin-top: 2px; color: #d7e3e5; font: 11px Electronic, monospace; }
+.model-stats small { color: #718a94; font-size: 8px; }
 .view-hint {
   position: absolute;
   z-index: 4;
@@ -1050,7 +1035,7 @@ onBeforeUnmount(() => {
   align-items: center;
   gap: 7px;
   color: rgba(150, 177, 186, .45);
-  font-size: 7px;
+  font-size: 9px;
   opacity: .55;
   transition: opacity .2s ease;
   pointer-events: none;

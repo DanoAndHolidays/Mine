@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import SavModel3D from '../../components/SavModel3D.vue'
 
+const afterManifestUrl = `${import.meta.env.BASE_URL}models/xieyahou/manifest.json`
+
 const viewerStatuses = ref({
   before: { state: 'loading', message: '', manifest: null, metrics: null },
   after: { state: 'loading', message: '', manifest: null, metrics: null }
@@ -21,11 +23,17 @@ const allReady = computed(() => (
   && viewerStatuses.value.after.state === 'ready'
 ))
 
-const peakReductionLabel = computed(() => {
+const peakChange = computed(() => {
   const beforePeak = Number(viewerStatuses.value.before.metrics?.peakStressMpa)
   const afterPeak = Number(viewerStatuses.value.after.metrics?.peakStressMpa)
-  if (!Number.isFinite(beforePeak) || !Number.isFinite(afterPeak)) return '--'
-  return `${((beforePeak - afterPeak) / beforePeak * 100).toFixed(1)}%`
+  if (!Number.isFinite(beforePeak) || !Number.isFinite(afterPeak)) return null
+  return (afterPeak - beforePeak) / beforePeak * 100
+})
+
+const peakChangeLabel = computed(() => {
+  if (peakChange.value === null) return '--'
+  const sign = peakChange.value > 0 ? '+' : ''
+  return `${sign}${peakChange.value.toFixed(1)}%`
 })
 
 function updateStatus(status) {
@@ -50,7 +58,7 @@ function updateStatus(status) {
         <i :class="{ ready: allReady }"></i>
         <span>
           <strong>{{ allReady ? '前后对比模型已载入' : '正在载入对比模型' }}</strong>
-          <small>xieyaqian.f3sav · {{ modelSize }} m</small>
+          <small>xieyaqian.f3sav → xieyahou.f3sav · {{ modelSize }} m</small>
         </span>
       </div>
     </header>
@@ -59,7 +67,7 @@ function updateStatus(status) {
       <div class="workspace-label">
         <span>BEFORE / AFTER</span>
         <strong>800米埋深巷道卸压过程对比</strong>
-        <small>左侧为真实 SAV 卸压前模型 · 右侧为基于卸压效率的效果演示映射</small>
+        <small>左侧为 xieyaqian.f3sav 卸压前模型 · 右侧为 xieyahou.f3sav 卸压后模型</small>
       </div>
       <div class="comparison-grid">
         <article class="comparison-panel phase-before">
@@ -85,7 +93,7 @@ function updateStatus(status) {
           <header class="phase-heading">
             <span>02 / 卸压后</span>
             <strong>残余高应力区评估</strong>
-            <small>演示映射 · 待卸压后 SAV 替换</small>
+            <small>真实 SAV 卸压后体单元应力场</small>
           </header>
           <div class="model-viewport">
             <i class="corner top-left"></i>
@@ -94,6 +102,7 @@ function updateStatus(status) {
             <i class="corner bottom-right"></i>
             <SavModel3D
               phase="after"
+              :manifest-url="afterManifestUrl"
               default-target-active
               @status="updateStatus"
             />
@@ -110,8 +119,10 @@ function updateStatus(status) {
         <span>卸压后残余单元</span>
         <strong>{{ viewerStatuses.after.metrics?.highStressZoneCount?.toLocaleString('zh-CN') || '--' }}</strong>
         <i></i>
-        <span>峰值降低率</span>
-        <strong class="reduction">{{ peakReductionLabel }}</strong>
+        <span>峰值变化率</span>
+        <strong :class="{ reduction: peakChange !== null && peakChange <= 0, increase: peakChange > 0 }">
+          {{ peakChangeLabel }}
+        </strong>
       </footer>
     </section>
   </main>
@@ -187,14 +198,14 @@ function updateStatus(status) {
 
 .page-brand span {
   color: #537680;
-  font: 7px Electronic, monospace;
+  font: 9px Electronic, monospace;
   letter-spacing: 1.6px;
 }
 
 .page-brand strong {
   margin-top: 3px;
   color: #dce9eb;
-  font-size: 14px;
+  font-size: 17px;
   font-weight: 500;
   letter-spacing: 1px;
 }
@@ -226,14 +237,14 @@ function updateStatus(status) {
 
 .source-state strong {
   color: #cfdcdf;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 500;
 }
 
 .source-state small {
   margin-top: 2px;
   color: #59727c;
-  font: 7px Electronic, monospace;
+  font: 9px Electronic, monospace;
 }
 
 .model-workspace {
@@ -254,19 +265,19 @@ function updateStatus(status) {
 
 .workspace-label > span {
   color: #6dc7d7;
-  font: 8px Electronic, monospace;
+  font: 10px Electronic, monospace;
   letter-spacing: 1.8px;
 }
 
 .workspace-label > strong {
   color: #d7e5e7;
-  font-size: 13px;
+  font-size: 16px;
   font-weight: 500;
 }
 
 .workspace-label > small {
   color: #58737d;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .comparison-grid {
@@ -314,18 +325,18 @@ function updateStatus(status) {
 
 .phase-heading span {
   color: #70cbd9;
-  font: 8px Electronic, monospace;
+  font: 10px Electronic, monospace;
 }
 
 .phase-heading strong {
   color: #d8e7e9;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 500;
 }
 
 .phase-heading small {
   color: #5f7b84;
-  font-size: 7px;
+  font-size: 9px;
 }
 
 .phase-after .phase-heading span {
@@ -360,17 +371,21 @@ function updateStatus(status) {
   justify-content: flex-end;
   gap: 7px;
   color: #57717b;
-  font-size: 7px;
+  font-size: 9px;
 }
 
 .model-source strong {
   color: #9eb4ba;
-  font: 8px Electronic, monospace;
+  font: 10px Electronic, monospace;
   font-weight: 400;
 }
 
 .model-source .reduction {
   color: #74d4aa;
+}
+
+.model-source .increase {
+  color: #ef9a73;
 }
 
 .model-source i {
@@ -397,7 +412,7 @@ function updateStatus(status) {
   .workspace-label { display: block; }
   .workspace-label > span,
   .workspace-label > strong { display: block; }
-  .workspace-label > strong { margin-top: 4px; font-size: 11px; }
+  .workspace-label > strong { margin-top: 4px; font-size: 14px; }
   .workspace-label > small { display: none; }
   .comparison-grid {
     grid-template-columns: 1fr;

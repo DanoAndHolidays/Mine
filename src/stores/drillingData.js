@@ -11,6 +11,7 @@ export const useDrillingStore = defineStore('drillingData', () => {
   const byFileMetrics = ref([])
   const telemetry = ref(null)
   const ringCloud = ref(null)
+  const spatialRoadway = ref(null)
   const loaded = ref(false)
   const loading = ref(false)
   const error = ref(null)
@@ -92,9 +93,20 @@ export const useDrillingStore = defineStore('drillingData', () => {
     }
   }
 
+  async function loadSpatialRoadway() {
+    if (spatialRoadway.value) return
+    try {
+      const resp = await fetch(dataUrl('roadway_spatial_v4.json'))
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
+      spatialRoadway.value = await resp.json()
+    } catch (err) {
+      error.value = `巷道空间反演数据加载失败：${err.message}`
+    }
+  }
+
   async function loadAll() {
     if (loaded.value) return
-    await Promise.all([loadSummary(), loadRingCloud()])
+    await Promise.all([loadSummary(), loadRingCloud(), loadSpatialRoadway()])
     loaded.value = true
   }
 
@@ -212,10 +224,10 @@ export const useDrillingStore = defineStore('drillingData', () => {
   })
 
   return {
-    summary, experiments, overallMetrics, byFileMetrics, telemetry, ringCloud,
+    summary, experiments, overallMetrics, byFileMetrics, telemetry, ringCloud, spatialRoadway,
     loaded, loading, error,
     selectedStress, selectedModel, selectedBoreholeId, selectedExperimentId,
-    loadSummary, loadExperimentManifest, loadMetrics, loadTelemetry, loadRingCloud, loadAll,
+    loadSummary, loadExperimentManifest, loadMetrics, loadTelemetry, loadRingCloud, loadSpatialRoadway, loadAll,
     activeModel, models, boreholes, activeBorehole, stressLevels, damageLevels,
     experimentStatsByDamage, experimentStatsByStress,
     filteredExperiments, stressFileMetrics, currentStressAccuracy,

@@ -1,54 +1,38 @@
 <template>
-  <div ref="container" class="volume-cloud-canvas" :class="{ compact }" @pointermove="onPointerMove" @pointerleave="hovered = false" @click="onSceneClick">
+  <div
+    ref="container"
+    class="volume-cloud-canvas"
+    :class="{ compact }"
+    @pointerenter="hovered = true"
+    @pointerleave="hovered = false"
+  >
     <div class="field-header">
       <span class="field-symbol">{{ metricMeta.symbol }}</span>
-      <div>
-        <strong>{{ metricMeta.title }}</strong>
-        <small>{{ metricMeta.subtitle }}</small>
-      </div>
+      <div><strong>{{ metricMeta.title }}</strong><small>{{ metricMeta.subtitle }}</small></div>
     </div>
-
     <div class="coordinate-note">
-      <span><b>θ</b> 11 孔环向位置</span>
-      <span><b>r</b> 径向钻深 0–{{ maxDepth }} cm</span>
-      <span><b>X<sub>t</sub></b> 时间展开轴（非实测纵向距离）</span>
+      <span><b>X</b> 巷道纵向 -8-8 m</span>
+      <span><b>S</b> 拱形巷道表面 11 孔</span>
+      <span><b>r</b> 径向钻深 0-{{ maxDepth }} cm</span>
     </div>
-
-    <div class="slice-status">
-      <span class="status-current"><i></i>当前演进面 {{ currentDepth.toFixed(1) }} cm</span>
-      <span class="status-selected"><i></i>分析面 {{ selectedDepth.toFixed(1) }} cm</span>
-      <span>连续包络连接 · Δr ≈ {{ sliceStepDepth.toFixed(1) }} cm</span>
+    <div class="spatial-status">
+      <span><i></i>A / B / C 三个实测反演断面</span>
+      <strong>33 孔空间联合插值</strong>
     </div>
-
-    <div class="slice-selector" @click.stop>
-      <div class="selector-title"><span>TIME SLICES</span><strong>{{ selectedSliceIndex + 1 }} / {{ SLICE_COUNT }}</strong></div>
-      <div class="selector-track">
-        <button
-          v-for="index in SLICE_COUNT"
-          :key="index"
-          :aria-label="`选择第 ${index} 个时序切面`"
-          :title="`${sliceDepth(index - 1).toFixed(1)} cm`"
-          :class="{
-            passed: index - 1 <= currentSliceIndex,
-            current: index - 1 === currentSliceIndex,
-            selected: index - 1 === selectedSliceIndex
-          }"
-          @click="selectSlice(index - 1)"
-        ><i></i></button>
-      </div>
-      <div class="selector-axis"><span>0 cm</span><span>径向钻深 / 时间</span><span>{{ maxDepth }} cm</span></div>
+    <div class="section-key">
+      <span v-for="group in sectionGroups" :key="group.id">
+        <i></i><strong>{{ group.id }}组</strong><small>{{ group.longitudinalM }} m · 11孔</small>
+      </span>
     </div>
-
+    <div class="depth-readout">
+      <span>当前径向分析深度</span>
+      <strong>{{ selectedDepth.toFixed(1) }}<em> cm</em></strong>
+    </div>
     <div class="view-hint" :class="{ visible: hovered }">
-      <span>拖拽旋转</span><i></i><span>滚轮缩放</span><i></i><span>点击切面分析</span>
+      <span>拖拽旋转</span><i></i><span>滚轮缩放</span>
     </div>
-    <div v-if="viewMode === 'section'" class="mode-note"><i></i>单切面分析 · {{ selectedDepth.toFixed(1) }} cm</div>
-    <div v-if="viewMode === 'iso'" class="mode-note"><i></i>等值点云 · 历史时序体</div>
-    <div v-if="viewMode === 'cloud'" class="mode-note continuous-note"><i></i>外壁 + 内壁连续生长 · 当前面动态定位</div>
-
     <div v-if="!webglReady" class="webgl-fallback">
-      <strong>3D ENGINE OFFLINE</strong>
-      <span>当前浏览器未启用 WebGL</span>
+      <strong>3D ENGINE OFFLINE</strong><span>当前浏览器未启用 WebGL</span>
       <small v-if="webglError">{{ webglError }}</small>
     </div>
   </div>
@@ -58,20 +42,20 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { CSS2DObject, CSS2DRenderer } from 'three/addons/renderers/CSS2DRenderer.js'
 
 const props = defineProps({
-  progress: { type: Number, default: 0 },
+  progress: { type: Number, default: 100 },
   metric: { type: String, default: 'stress' },
-  slice: { type: Number, default: 0 },
+  slice: { type: Number, default: 50 },
   autoRotate: { type: Boolean, default: true },
   viewMode: { type: String, default: 'cloud' },
   compact: { type: Boolean, default: false },
   playing: { type: Boolean, default: true },
   speed: { type: Number, default: 1 },
-  modelId: { type: String, default: 'v3' },
+  modelId: { type: String, default: 'v4' },
   boreholes: { type: Array, default: () => [] },
-  selectedBoreholeId: { type: String, default: '' },
+  spatialGroups: { type: Array, default: () => [] },
+  selectedBoreholeId: { type: String, default: 'BH-01' },
   maxDepth: { type: Number, default: 125 }
 })
 
@@ -80,842 +64,744 @@ const container = ref(null)
 const hovered = ref(false)
 const webglReady = ref(true)
 const webglError = ref('')
-
-const SLICE_COUNT = 17
-const TUNNEL_RADIUS = 1.72
-const CLOUD_RADIUS = 4.25
-const VOLUME_LENGTH = 10.4
-const RADIAL_STEPS = 32
-const ANGULAR_STEPS = 96
-const ENVELOPE_STEPS = 65
-
+const selectedDepth = computed(() => props.maxDepth * THREE.MathUtils.clamp(props.slice / 100, 0, 1))
+const sectionGroups = computed(() => props.spatialGroups.slice().sort((a, b) => a.longitudinalM - b.longitudinalM))
 const metricMeta = computed(() => {
-  if (props.metric === 'damage') return { symbol: 'D(θ,r,t)', title: '损伤反演拟合场', subtitle: 'DAMAGE INVERSION · PERIODIC RBF' }
-  if (props.metric === 'error') return { symbol: 'E(θ,r,t)', title: '联合误差拟合场', subtitle: 'NORMALIZED JOINT ERROR FIELD' }
-  return { symbol: 'σ(θ,r,t)', title: '应力反演拟合场', subtitle: 'STRESS INVERSION · PERIODIC RBF' }
+  if (props.metric === 'damage') return { symbol: 'D(X,S,r)', title: '三维损伤反演场', subtitle: 'ARCHED ROADWAY · SPATIAL FIELD' }
+  if (props.metric === 'error') return { symbol: 'E(X,S,r)', title: '三维置信误差场', subtitle: 'CONFIDENCE-WEIGHTED SPATIAL FIELD' }
+  return { symbol: 'σ(X,S,r)', title: '三维应力反演场', subtitle: 'ARCHED ROADWAY · SPATIAL FIELD' }
 })
 
-const currentRatio = computed(() => THREE.MathUtils.clamp(props.progress / 100, 0, 1))
-const selectedRatio = computed(() => THREE.MathUtils.clamp(props.slice / 100, 0, 1))
-const currentDepth = computed(() => props.maxDepth * currentRatio.value)
-const selectedDepth = computed(() => props.maxDepth * selectedRatio.value)
-const sliceStepDepth = computed(() => props.maxDepth / (SLICE_COUNT - 1))
-const currentSliceIndex = computed(() => Math.round(currentRatio.value * (SLICE_COUNT - 1)))
-const selectedSliceIndex = computed(() => Math.round(selectedRatio.value * (SLICE_COUNT - 1)))
+const ROADWAY_HALF_WIDTH = 2.35
+const ROADWAY_FLOOR_Y = -1.55
+const ROADWAY_SPRING_Y = 0.35
+const LONGITUDINAL_MIN = -9.5
+const LONGITUDINAL_MAX = 9.5
+const ROADWAY_LENGTH = LONGITUDINAL_MAX - LONGITUDINAL_MIN
+const FIELD_DEPTH_M = 2.75
+const ROCK_HALF_WIDTH = 5.45
+const ROCK_BOTTOM_Y = -3.55
+const ROCK_TOP_Y = 5.35
+const X_STEPS = 25
+const SURFACE_STEPS = 48
+const RADIAL_STEPS = 9
+const MAX_RENDER_FPS = 30
+const FRAME_INTERVAL = 1000 / MAX_RENDER_FPS
 
-let scene, camera, renderer, labelRenderer, controls, animationFrame, resizeObserver, clock
-let rootGroup, tunnelMesh, tunnelWire, temporalCage, temporalEnvelope, temporalInnerWall, temporalTrajectoryGroup, analysisBoreholeGroup
-let raycaster, pointer
-const temporalSlices = []
-const temporalTrajectories = []
-const sliceHitTargets = []
-const boreholeObjects = []
-const boreholeTargets = []
+let scene, camera, renderer, controls, resizeObserver, intersectionObserver, animationFrame
+let rootGroup, fieldPoints, fieldSurface, rockMass, rockEdges, cavitySurface, roadwayFloor
+let boreholeGroup, boreholeTubes, boreholeCollars, boreholeHeads, sectionGuideGroup
+let fieldPointMaterial, fieldSurfaceMaterial
+let isIntersecting = true
+let controlsDragging = false
+let renderRequested = true
+let settleUntil = 0
+let lastFrameTime = 0
+let lastSurfaceBand = -1
+let boreholeEntries = []
 
-// Deep, high-contrast scientific palettes. Stress and damage remain visually
-// distinct while keeping the same low-to-high reading direction.
 const palettes = {
-  stress: [
-    [0.00, new THREE.Color('#000b38')],
-    [0.16, new THREE.Color('#0037a8')],
-    [0.34, new THREE.Color('#007fc4')],
-    [0.52, new THREE.Color('#00a86b')],
-    [0.68, new THREE.Color('#9cb900')],
-    [0.82, new THREE.Color('#e47700')],
-    [0.93, new THREE.Color('#e62b00')],
-    [1.00, new THREE.Color('#9d001f')]
-  ],
-  damage: [
-    [0.00, new THREE.Color('#10002f')],
-    [0.16, new THREE.Color('#351080')],
-    [0.34, new THREE.Color('#2656b8')],
-    [0.52, new THREE.Color('#008c8f')],
-    [0.68, new THREE.Color('#72a800')],
-    [0.82, new THREE.Color('#d47400')],
-    [0.93, new THREE.Color('#d52300')],
-    [1.00, new THREE.Color('#82001d')]
-  ],
-  error: [
-    [0.00, new THREE.Color('#020914')],
-    [0.28, new THREE.Color('#123d62')],
-    [0.55, new THREE.Color('#168b91')],
-    [0.78, new THREE.Color('#d28b18')],
-    [1.00, new THREE.Color('#9d071d')]
-  ]
+  stress: [[0, '#000b38'], [.18, '#0037a8'], [.36, '#007fc4'], [.54, '#00a86b'], [.7, '#9cb900'], [.84, '#e47700'], [.94, '#e62b00'], [1, '#9d001f']],
+  damage: [[0, '#10002f'], [.2, '#351080'], [.4, '#2656b8'], [.58, '#008c8f'], [.73, '#72a800'], [.86, '#d47400'], [.95, '#d52300'], [1, '#82001d']],
+  error: [[0, '#07121d'], [.35, '#123d62'], [.62, '#168b91'], [.82, '#d28b18'], [1, '#9d071d']]
+}
+const paletteColors = Object.fromEntries(
+  Object.entries(palettes).map(([key, stops]) => [key, stops.map(([position, color]) => [position, new THREE.Color(color)])])
+)
+const scratchColor = new THREE.Color()
+const scratchMatrix = new THREE.Matrix4()
+const scratchQuaternion = new THREE.Quaternion()
+const scratchIdentityQuaternion = new THREE.Quaternion()
+const scratchScale = new THREE.Vector3()
+const scratchMidpoint = new THREE.Vector3()
+const scratchDirection = new THREE.Vector3()
+const cylinderAxis = new THREE.Vector3(0, 1, 0)
+
+function requestRender(settleMs = 0) {
+  renderRequested = true
+  if (settleMs) settleUntil = Math.max(settleUntil, performance.now() + settleMs)
 }
 
-function sliceDepth(index) {
-  return index / (SLICE_COUNT - 1) * props.maxDepth
-}
-
-function selectSlice(index) {
-  emit('slice-select', index / (SLICE_COUNT - 1) * 100)
-}
-
-function colorAt(value) {
-  const palette = palettes[props.metric] || palettes.stress
+function colorAt(value, target = new THREE.Color()) {
+  const palette = paletteColors[props.metric] || paletteColors.stress
   const normalized = THREE.MathUtils.clamp(value, 0, 1)
   for (let index = 0; index < palette.length - 1; index += 1) {
     const [start, startColor] = palette[index]
     const [end, endColor] = palette[index + 1]
-    if (normalized <= end) return startColor.clone().lerp(endColor, (normalized - start) / (end - start))
-  }
-  return palette.at(-1)[1].clone()
-}
-
-function sampleAtRatio(borehole, ratio) {
-  const rows = borehole?.samples || []
-  if (!rows.length) return null
-  const index = Math.min(Math.round(THREE.MathUtils.clamp(ratio, 0, 1) * (rows.length - 1)), rows.length - 1)
-  return rows[index]
-}
-
-function interpolatedFieldAtRatio(borehole, ratio) {
-  const rows = borehole?.samples || []
-  if (!rows.length) return 0
-  if (rows.length === 1) return normalizedField(rows[0])
-  const position = THREE.MathUtils.clamp(ratio, 0, 1) * (rows.length - 1)
-  const lowerIndex = Math.floor(position)
-  const upperIndex = Math.min(lowerIndex + 1, rows.length - 1)
-  const amount = position - lowerIndex
-  return THREE.MathUtils.lerp(normalizedField(rows[lowerIndex]), normalizedField(rows[upperIndex]), amount)
-}
-
-function normalizedField(sample) {
-  if (!sample) return 0
-  const prediction = sample.predictions?.[props.modelId] || {}
-  const predictedDamage = Number(prediction.damage ?? sample.actualDamage ?? 0)
-  const predictedStress = Number(prediction.stress ?? sample.actualStress ?? 0)
-  if (props.metric === 'damage') return THREE.MathUtils.clamp(predictedDamage / 80, 0, 1)
-  if (props.metric === 'error') {
-    const damageError = Math.abs(predictedDamage - Number(sample.actualDamage || 0)) / 80
-    const stressError = Math.abs(predictedStress - Number(sample.actualStress || 0)) / 40
-    return THREE.MathUtils.clamp((damageError + stressError) / 2, 0, 1)
-  }
-  return THREE.MathUtils.clamp(predictedStress / 40, 0, 1)
-}
-
-function circularDistance(a, b) {
-  const distance = Math.abs(a - b) % (Math.PI * 2)
-  return Math.min(distance, Math.PI * 2 - distance)
-}
-
-function fieldAt(angle, radialRatio) {
-  if (!props.boreholes.length) return 0
-  // Periodic Gaussian RBF interpolation. The tighter, data-spacing-derived
-  // bandwidth preserves measured borehole peaks instead of washing them out.
-  const spread = (Math.PI * 2 / props.boreholes.length) * 0.46
-  let weighted = 0
-  let totalWeight = 0
-  props.boreholes.forEach((borehole) => {
-    const boreholeAngle = THREE.MathUtils.degToRad(Number(borehole.angleDeg || 0))
-    const distance = circularDistance(angle, boreholeAngle)
-    const weight = Math.exp(-0.5 * Math.pow(distance / spread, 2)) + 0.0002
-    weighted += interpolatedFieldAtRatio(borehole, radialRatio) * weight
-    totalWeight += weight
-  })
-  return totalWeight ? weighted / totalWeight : 0
-}
-
-function pointOnRing(radius, angle, x = 0) {
-  return new THREE.Vector3(x, Math.sin(angle) * radius, Math.cos(angle) * radius)
-}
-
-function createAnnularGeometry() {
-  const positions = []
-  const colors = []
-  const indices = []
-  for (let radial = 0; radial <= RADIAL_STEPS; radial += 1) {
-    const radius = TUNNEL_RADIUS + (CLOUD_RADIUS - TUNNEL_RADIUS) * (radial / RADIAL_STEPS)
-    for (let angular = 0; angular <= ANGULAR_STEPS; angular += 1) {
-      const angle = angular / ANGULAR_STEPS * Math.PI * 2
-      const point = pointOnRing(radius, angle)
-      positions.push(point.x, point.y, point.z)
-      colors.push(0.04, 0.08, 0.12)
+    if (normalized <= end) {
+      return target.copy(startColor).lerp(endColor, (normalized - start) / Math.max(end - start, .0001))
     }
   }
-  for (let radial = 0; radial < RADIAL_STEPS; radial += 1) {
-    for (let angular = 0; angular < ANGULAR_STEPS; angular += 1) {
-      const current = radial * (ANGULAR_STEPS + 1) + angular
-      const next = current + ANGULAR_STEPS + 1
+  return target.copy(palette.at(-1)[1])
+}
+
+function archPoint(surfaceRatio, offset = 0) {
+  const ratio = THREE.MathUtils.clamp(surfaceRatio, 0, 1)
+  const width = ROADWAY_HALF_WIDTH + offset
+  const floor = ROADWAY_FLOOR_Y - offset
+  if (ratio < .2) return new THREE.Vector3(0, THREE.MathUtils.lerp(floor, ROADWAY_SPRING_Y, ratio / .2), -width)
+  if (ratio <= .8) {
+    const angle = Math.PI - (ratio - .2) / .6 * Math.PI
+    return new THREE.Vector3(0, ROADWAY_SPRING_Y + Math.sin(angle) * width, Math.cos(angle) * width)
+  }
+  return new THREE.Vector3(0, THREE.MathUtils.lerp(ROADWAY_SPRING_Y, floor, (ratio - .8) / .2), width)
+}
+
+function archNormal(surfaceRatio) {
+  const before = archPoint(Math.max(0, surfaceRatio - .001))
+  const after = archPoint(Math.min(1, surfaceRatio + .001))
+  const tangent = after.sub(before).normalize()
+  const normal = new THREE.Vector3(0, tangent.z, -tangent.y).normalize()
+  const point = archPoint(surfaceRatio)
+  const outward = new THREE.Vector3(0, point.y - ROADWAY_SPRING_Y, point.z)
+  if (normal.dot(outward) < 0) normal.multiplyScalar(-1)
+  return normal
+}
+
+function sampleAtDepth(borehole, radialRatio) {
+  const samples = borehole?.samples || []
+  if (!samples.length) return null
+  const index = Math.min(Math.round(THREE.MathUtils.clamp(radialRatio, 0, 1) * (samples.length - 1)), samples.length - 1)
+  return samples[index]
+}
+
+function sampleValue(group, surfaceRatio, radialRatio) {
+  const boreholes = group?.boreholes || []
+  if (!boreholes.length) return 0
+  const position = THREE.MathUtils.clamp(surfaceRatio, 0, 1) * (boreholes.length - 1)
+  const lower = Math.floor(position)
+  const upper = Math.min(lower + 1, boreholes.length - 1)
+  const amount = position - lower
+  const read = (sample) => {
+    if (!sample) return 0
+    if (props.metric === 'damage') return Number(sample.damagePct || 0) / 80
+    if (props.metric === 'error') return 1 - Number(sample.confidence || 0)
+    return Number(sample.stressMpa || 0) / 40
+  }
+  return THREE.MathUtils.lerp(
+    read(sampleAtDepth(boreholes[lower], radialRatio)),
+    read(sampleAtDepth(boreholes[upper], radialRatio)),
+    amount
+  )
+}
+
+function fieldAt(x, surfaceRatio, radialRatio) {
+  const groups = sectionGroups.value
+  if (!groups.length) return 0
+  if (x <= groups[0].longitudinalM) return sampleValue(groups[0], surfaceRatio, radialRatio)
+  if (x >= groups.at(-1).longitudinalM) return sampleValue(groups.at(-1), surfaceRatio, radialRatio)
+  for (let index = 0; index < groups.length - 1; index += 1) {
+    const left = groups[index]
+    const right = groups[index + 1]
+    if (x <= right.longitudinalM) {
+      const amount = (x - left.longitudinalM) / Math.max(right.longitudinalM - left.longitudinalM, .0001)
+      return THREE.MathUtils.lerp(
+        sampleValue(left, surfaceRatio, radialRatio),
+        sampleValue(right, surfaceRatio, radialRatio),
+        amount
+      )
+    }
+  }
+  return 0
+}
+
+function createRockMass() {
+  const shape = new THREE.Shape()
+  shape.moveTo(-ROCK_HALF_WIDTH, ROCK_BOTTOM_Y)
+  shape.lineTo(ROCK_HALF_WIDTH, ROCK_BOTTOM_Y)
+  shape.lineTo(ROCK_HALF_WIDTH, ROCK_TOP_Y)
+  shape.lineTo(-ROCK_HALF_WIDTH, ROCK_TOP_Y)
+  shape.closePath()
+
+  const cavity = new THREE.Path()
+  for (let index = 0; index <= SURFACE_STEPS; index += 1) {
+    const point = archPoint(index / SURFACE_STEPS)
+    if (index === 0) cavity.moveTo(point.z, point.y)
+    else cavity.lineTo(point.z, point.y)
+  }
+  cavity.closePath()
+  shape.holes.push(cavity)
+
+  const geometry = new THREE.ExtrudeGeometry(shape, {
+    depth: ROADWAY_LENGTH,
+    steps: 1,
+    bevelEnabled: false,
+    curveSegments: 1
+  })
+  geometry.translate(0, 0, -ROADWAY_LENGTH / 2)
+  geometry.rotateY(Math.PI / 2)
+  geometry.computeVertexNormals()
+
+  const capMaterial = new THREE.MeshLambertMaterial({
+    color: '#789098',
+    transparent: true,
+    opacity: .22,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  })
+  const wallMaterial = new THREE.MeshLambertMaterial({
+    color: '#526970',
+    transparent: true,
+    opacity: .13,
+    side: THREE.DoubleSide,
+    depthWrite: false
+  })
+  rockMass = new THREE.Mesh(geometry, [capMaterial, wallMaterial])
+  rockMass.name = '半透明围岩实体与拱形巷道空腔'
+  rockMass.renderOrder = 1
+  rootGroup.add(rockMass)
+
+  rockEdges = new THREE.LineSegments(
+    new THREE.EdgesGeometry(geometry, 28),
+    new THREE.LineBasicMaterial({ color: '#8fa7ad', transparent: true, opacity: .2, depthWrite: false })
+  )
+  rockEdges.renderOrder = 2
+  rootGroup.add(rockEdges)
+}
+
+function makeTubeGeometry(offset = 0) {
+  const positions = new Float32Array(X_STEPS * (SURFACE_STEPS + 1) * 3)
+  const indices = []
+  let cursor = 0
+  for (let xi = 0; xi < X_STEPS; xi += 1) {
+    const x = THREE.MathUtils.lerp(LONGITUDINAL_MIN, LONGITUDINAL_MAX, xi / (X_STEPS - 1))
+    for (let si = 0; si <= SURFACE_STEPS; si += 1) {
+      const point = archPoint(si / SURFACE_STEPS, offset)
+      positions[cursor++] = x
+      positions[cursor++] = point.y
+      positions[cursor++] = point.z
+    }
+  }
+  for (let xi = 0; xi < X_STEPS - 1; xi += 1) {
+    for (let si = 0; si < SURFACE_STEPS; si += 1) {
+      const current = xi * (SURFACE_STEPS + 1) + si
+      const next = current + SURFACE_STEPS + 1
       indices.push(current, next, current + 1, current + 1, next, next + 1)
     }
   }
   const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
   return geometry
 }
 
-function makeLabel(className) {
-  const element = document.createElement('div')
-  element.className = `spatial-label ${className}`
-  const label = new CSS2DObject(element)
-  label.center.set(0.5, 0.5)
-  return label
-}
-
-function createTunnelReference() {
-  const geometry = new THREE.CylinderGeometry(TUNNEL_RADIUS, TUNNEL_RADIUS, VOLUME_LENGTH + 2, 72, 12, true)
-  geometry.rotateZ(Math.PI / 2)
-  tunnelMesh = new THREE.Mesh(
-    geometry,
-    new THREE.MeshPhysicalMaterial({
-      color: '#315363', transparent: true, opacity: 0.028, side: THREE.DoubleSide,
-      roughness: 0.9, metalness: 0, depthWrite: false
-    })
-  )
-  rootGroup.add(tunnelMesh)
-  tunnelWire = new THREE.LineSegments(
-    new THREE.WireframeGeometry(geometry),
-    new THREE.LineBasicMaterial({ color: '#7895a0', transparent: true, opacity: 0.012, depthWrite: false })
-  )
-  rootGroup.add(tunnelWire)
-}
-
-function createTemporalCage() {
-  temporalCage = new THREE.Group()
-  const guideMaterial = new THREE.LineBasicMaterial({ color: '#7895a0', transparent: true, opacity: 0.075, depthWrite: false })
-  for (let index = 0; index < 12; index += 1) {
-    const angle = index / 12 * Math.PI * 2
-    const geometry = new THREE.BufferGeometry().setFromPoints([
-      pointOnRing(CLOUD_RADIUS, angle, -VOLUME_LENGTH / 2),
-      pointOnRing(CLOUD_RADIUS, angle, VOLUME_LENGTH / 2)
-    ])
-    temporalCage.add(new THREE.Line(geometry, guideMaterial.clone()))
-  }
-  const axis = new THREE.ArrowHelper(
-    new THREE.Vector3(1, 0, 0),
-    new THREE.Vector3(-VOLUME_LENGTH / 2 - 0.7, -CLOUD_RADIUS - 0.38, 0),
-    VOLUME_LENGTH + 1.4,
-    '#92a8b1',
-    0.25,
-    0.12
-  )
-  temporalCage.add(axis)
-  const label = makeLabel('time-axis-label')
-  label.element.innerHTML = '<span>X<sub>t</sub></span><strong>TIME-ORDERED SECTIONS</strong><small>仅为时序展开，不代表巷道纵向采样</small>'
-  label.position.set(VOLUME_LENGTH / 2 + 0.8, -CLOUD_RADIUS - 0.38, 0)
-  temporalCage.add(label)
-  rootGroup.add(temporalCage)
-}
-
-function createTemporalEnvelope() {
-  const positions = []
-  const colors = []
-  const indices = []
-  for (let sliceIndex = 0; sliceIndex < ENVELOPE_STEPS; sliceIndex += 1) {
-    const ratio = sliceIndex / (ENVELOPE_STEPS - 1)
-    const x = (ratio - 0.5) * VOLUME_LENGTH
-    const radius = TUNNEL_RADIUS + (CLOUD_RADIUS - TUNNEL_RADIUS) * ratio
-    for (let angular = 0; angular <= ANGULAR_STEPS; angular += 1) {
-      const angle = angular / ANGULAR_STEPS * Math.PI * 2
-      const point = pointOnRing(radius, angle, x)
-      positions.push(point.x, point.y, point.z)
-      colors.push(0.04, 0.08, 0.11)
-    }
-  }
-  for (let sliceIndex = 0; sliceIndex < ENVELOPE_STEPS - 1; sliceIndex += 1) {
-    for (let angular = 0; angular < ANGULAR_STEPS; angular += 1) {
-      const current = sliceIndex * (ANGULAR_STEPS + 1) + angular
-      const next = current + ANGULAR_STEPS + 1
-      indices.push(current, next, current + 1, current + 1, next, next + 1)
-    }
-  }
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
-  geometry.setIndex(indices)
-  geometry.computeVertexNormals()
-  temporalEnvelope = new THREE.Mesh(
-    geometry,
-    new THREE.MeshBasicMaterial({
-      vertexColors: true,
-      side: THREE.DoubleSide,
+function createRoadwayCavity() {
+  cavitySurface = new THREE.Mesh(
+    makeTubeGeometry(.018),
+    new THREE.MeshLambertMaterial({
+      color: '#8ba2a8',
       transparent: true,
-      opacity: 0.92,
-      toneMapped: false,
-      // The outer shell must occlude the inner wall. The tunnel opening still
-      // has no outer fragments, so the colored inner wall remains visible there.
-      depthWrite: true
-    })
-  )
-  temporalEnvelope.name = '连续时序插值包络体'
-  temporalEnvelope.renderOrder = 2
-  rootGroup.add(temporalEnvelope)
-  recolorTemporalEnvelope()
-}
-
-function recolorTemporalEnvelope() {
-  if (!temporalEnvelope) return
-  const colors = temporalEnvelope.geometry.attributes.color
-  for (let sliceIndex = 0; sliceIndex < ENVELOPE_STEPS; sliceIndex += 1) {
-    const ratio = sliceIndex / (ENVELOPE_STEPS - 1)
-    for (let angular = 0; angular <= ANGULAR_STEPS; angular += 1) {
-      const angle = angular / ANGULAR_STEPS * Math.PI * 2
-      const color = colorAt(fieldAt(angle, ratio)).lerp(new THREE.Color('#07121d'), 0.06)
-      const vertex = sliceIndex * (ANGULAR_STEPS + 1) + angular
-      colors.setXYZ(vertex, color.r, color.g, color.b)
-    }
-  }
-  colors.needsUpdate = true
-}
-
-function createTemporalInnerWall() {
-  const positions = []
-  const colors = []
-  const indices = []
-  const wallRadius = TUNNEL_RADIUS + 0.018
-  for (let sliceIndex = 0; sliceIndex < ENVELOPE_STEPS; sliceIndex += 1) {
-    const ratio = sliceIndex / (ENVELOPE_STEPS - 1)
-    const x = (ratio - 0.5) * VOLUME_LENGTH
-    for (let angular = 0; angular <= ANGULAR_STEPS; angular += 1) {
-      const angle = angular / ANGULAR_STEPS * Math.PI * 2
-      const point = pointOnRing(wallRadius, angle, x)
-      positions.push(point.x, point.y, point.z)
-      colors.push(0.04, 0.08, 0.11)
-    }
-  }
-  for (let sliceIndex = 0; sliceIndex < ENVELOPE_STEPS - 1; sliceIndex += 1) {
-    for (let angular = 0; angular < ANGULAR_STEPS; angular += 1) {
-      const current = sliceIndex * (ANGULAR_STEPS + 1) + angular
-      const next = current + ANGULAR_STEPS + 1
-      indices.push(current, current + 1, next, current + 1, next + 1, next)
-    }
-  }
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3))
-  geometry.setIndex(indices)
-  geometry.computeVertexNormals()
-  temporalInnerWall = new THREE.Mesh(
-    geometry,
-    new THREE.MeshBasicMaterial({
-      vertexColors: true,
+      opacity: .31,
       side: THREE.DoubleSide,
-      transparent: true,
-      opacity: 0.78,
-      toneMapped: false,
       depthWrite: false
     })
   )
-  temporalInnerWall.name = '连续时序彩色内壁'
-  temporalInnerWall.renderOrder = 3
-  rootGroup.add(temporalInnerWall)
-  recolorTemporalInnerWall()
-}
+  cavitySurface.name = '拱形巷道内壁'
+  cavitySurface.renderOrder = 4
+  rootGroup.add(cavitySurface)
 
-function recolorTemporalInnerWall() {
-  if (!temporalInnerWall) return
-  const colors = temporalInnerWall.geometry.attributes.color
-  for (let sliceIndex = 0; sliceIndex < ENVELOPE_STEPS; sliceIndex += 1) {
-    const ratio = sliceIndex / (ENVELOPE_STEPS - 1)
-    for (let angular = 0; angular <= ANGULAR_STEPS; angular += 1) {
-      const angle = angular / ANGULAR_STEPS * Math.PI * 2
-      const color = colorAt(fieldAt(angle, ratio)).lerp(new THREE.Color('#020813'), 0.12)
-      const vertex = sliceIndex * (ANGULAR_STEPS + 1) + angular
-      colors.setXYZ(vertex, color.r, color.g, color.b)
-    }
-  }
-  colors.needsUpdate = true
-}
-
-function rebuildTemporalTrajectories() {
-  if (!rootGroup) return
-  if (temporalTrajectoryGroup) {
-    rootGroup.remove(temporalTrajectoryGroup)
-    disposeObject(temporalTrajectoryGroup)
-  }
-  temporalTrajectories.length = 0
-  temporalTrajectoryGroup = new THREE.Group()
-  temporalTrajectoryGroup.name = '钻孔时序轨迹'
-  rootGroup.add(temporalTrajectoryGroup)
-
-  props.boreholes.forEach((borehole) => {
-    const line = new THREE.Line(
-      new THREE.BufferGeometry(),
-      new THREE.LineBasicMaterial({ transparent: true, opacity: 0.18, depthWrite: false })
-    )
-    line.renderOrder = 22
-    temporalTrajectoryGroup.add(line)
-    temporalTrajectories.push({ borehole, line })
-  })
-  updateTemporalTrajectories()
-}
-
-function updateTemporalTrajectories() {
-  if (!temporalTrajectoryGroup) return
-  const endRatio = currentRatio.value
-  const endIndex = Math.ceil(endRatio * (ENVELOPE_STEPS - 1))
-  temporalTrajectoryGroup.visible = props.viewMode !== 'section' && endRatio > 0
-  temporalTrajectories.forEach((item) => {
-    const angle = THREE.MathUtils.degToRad(Number(item.borehole.angleDeg || 0))
-    const points = []
-    for (let sliceIndex = 0; sliceIndex <= endIndex; sliceIndex += 1) {
-      const ratio = Math.min(sliceIndex / (ENVELOPE_STEPS - 1), endRatio)
-      const x = (ratio - 0.5) * VOLUME_LENGTH
-      const radius = TUNNEL_RADIUS + (CLOUD_RADIUS - TUNNEL_RADIUS) * ratio
-      points.push(pointOnRing(radius, angle, x))
-    }
-    item.line.geometry.dispose()
-    item.line.geometry = new THREE.BufferGeometry().setFromPoints(points)
-    const selected = item.borehole.id === props.selectedBoreholeId
-    const special = item.borehole.role === 'special-variable-stress'
-    item.line.material.color.set(selected ? '#75d7e8' : special ? '#d0a956' : '#8aa0a8')
-    item.line.material.opacity = selected ? 0.86 : special ? 0.5 : 0.28
-  })
-}
-
-function createTemporalVolume() {
-  temporalSlices.length = 0
-  sliceHitTargets.length = 0
-  for (let index = 0; index < SLICE_COUNT; index += 1) {
-    const ratio = index / (SLICE_COUNT - 1)
-    const x = (ratio - 0.5) * VOLUME_LENGTH
-    const geometry = createAnnularGeometry()
-    const material = new THREE.MeshBasicMaterial({
-      vertexColors: true,
-      side: THREE.DoubleSide,
+  const floorGeometry = new THREE.PlaneGeometry(ROADWAY_LENGTH, ROADWAY_HALF_WIDTH * 2)
+  floorGeometry.rotateX(-Math.PI / 2)
+  roadwayFloor = new THREE.Mesh(
+    floorGeometry,
+    new THREE.MeshLambertMaterial({
+      color: '#82979d',
       transparent: true,
-      opacity: 0.2,
-      toneMapped: false,
-      depthWrite: false,
-      alphaTest: 0.002
+      opacity: .28,
+      side: THREE.DoubleSide,
+      depthWrite: false
     })
-    const mesh = new THREE.Mesh(geometry, material)
-    mesh.position.x = x
-    mesh.userData = { sliceIndex: index, ratio }
-    mesh.renderOrder = 4 + index
-    rootGroup.add(mesh)
-    sliceHitTargets.push(mesh)
-
-    const points = new THREE.Points(
-      geometry,
-      new THREE.PointsMaterial({
-        vertexColors: true, size: 0.062, transparent: true, opacity: 0.6,
-        toneMapped: false,
-        blending: THREE.AdditiveBlending, depthWrite: false
-      })
-    )
-    points.position.x = x + 0.018
-    points.visible = false
-    points.renderOrder = 30 + index
-    rootGroup.add(points)
-
-    const outlineMaterial = new THREE.MeshBasicMaterial({ color: '#718c98', transparent: true, opacity: 0.08, depthWrite: false })
-    const outerRim = new THREE.Mesh(new THREE.TorusGeometry(CLOUD_RADIUS, 0.024, 8, 120), outlineMaterial)
-    outerRim.rotation.y = Math.PI / 2
-    outerRim.position.x = x
-    outerRim.renderOrder = 40 + index
-    rootGroup.add(outerRim)
-    const innerRim = new THREE.Mesh(new THREE.TorusGeometry(TUNNEL_RADIUS, 0.018, 8, 120), outlineMaterial.clone())
-    innerRim.rotation.y = Math.PI / 2
-    innerRim.position.x = x
-    innerRim.renderOrder = 40 + index
-    rootGroup.add(innerRim)
-
-    const label = makeLabel('slice-label')
-    label.element.innerHTML = `<span>T${String(index + 1).padStart(2, '0')}</span><strong>${sliceDepth(index).toFixed(1)} cm</strong>`
-    label.position.set(x, CLOUD_RADIUS + 0.34, 0)
-    label.visible = false
-    rootGroup.add(label)
-
-    temporalSlices.push({ index, ratio, x, mesh, points, outerRim, innerRim, label })
-  }
-  recolorVolume()
-  updateVolumeState()
+  )
+  roadwayFloor.position.y = ROADWAY_FLOOR_Y
+  roadwayFloor.renderOrder = 4
+  rootGroup.add(roadwayFloor)
 }
 
-function recolorVolume() {
-  temporalSlices.forEach((sliceItem) => {
-    const position = sliceItem.mesh.geometry.attributes.position
-    const colors = sliceItem.mesh.geometry.attributes.color
-    for (let vertex = 0; vertex < position.count; vertex += 1) {
-      const y = position.getY(vertex)
-      const z = position.getZ(vertex)
-      const radius = Math.sqrt(y * y + z * z)
-      const radialRatio = THREE.MathUtils.clamp((radius - TUNNEL_RADIUS) / (CLOUD_RADIUS - TUNNEL_RADIUS), 0, 1)
-      const angle = Math.atan2(y, z)
-      const reveal = 1 - THREE.MathUtils.smoothstep(radialRatio, sliceItem.ratio - 0.028, sliceItem.ratio + 0.025)
-      const activeColor = colorAt(fieldAt(angle, radialRatio))
-      const dormantColor = new THREE.Color('#07131e')
-      const color = dormantColor.lerp(activeColor, reveal)
-      if (props.viewMode === 'iso' && normalizedFieldAtVertex(angle, radialRatio) < 0.52) color.multiplyScalar(0.12)
-      colors.setXYZ(vertex, color.r, color.g, color.b)
+function createSectionGuides() {
+  if (sectionGuideGroup) {
+    rootGroup.remove(sectionGuideGroup)
+    disposeObject(sectionGuideGroup)
+  }
+  sectionGuideGroup = new THREE.Group()
+  const colors = ['#6bc8d8', '#e1bc65', '#6bc8d8']
+  sectionGroups.value.forEach((group, groupIndex) => {
+    const inner = []
+    const outer = []
+    for (let index = 0; index <= SURFACE_STEPS; index += 1) {
+      const ratio = index / SURFACE_STEPS
+      const innerPoint = archPoint(ratio, .025)
+      const outerPoint = archPoint(ratio, FIELD_DEPTH_M)
+      innerPoint.x = group.longitudinalM
+      outerPoint.x = group.longitudinalM
+      inner.push(innerPoint)
+      outer.push(outerPoint)
     }
-    colors.needsUpdate = true
+    ;[inner, outer].forEach((points) => {
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(points),
+        new THREE.LineDashedMaterial({
+          color: colors[groupIndex] || colors[0],
+          transparent: true,
+          opacity: groupIndex === 1 ? .6 : .38,
+          dashSize: .18,
+          gapSize: .11,
+          depthWrite: false
+        })
+      )
+      line.computeLineDistances()
+      line.renderOrder = 5
+      sectionGuideGroup.add(line)
+    })
   })
-  recolorTemporalEnvelope()
-  recolorTemporalInnerWall()
+  rootGroup.add(sectionGuideGroup)
 }
 
-function normalizedFieldAtVertex(angle, radialRatio) {
-  return fieldAt(angle, radialRatio)
-}
-
-function updateVolumeState() {
-  if (!temporalSlices.length) return
-  const currentIndex = currentSliceIndex.value
-  const selectedIndex = selectedSliceIndex.value
-  temporalSlices.forEach((sliceItem) => {
-    const passed = sliceItem.index <= currentIndex
-    const selected = sliceItem.index === selectedIndex
-    const current = sliceItem.index === currentIndex
-    const sectionMode = props.viewMode === 'section'
-    const isoMode = props.viewMode === 'iso'
-
-    // In cloud mode the dense interpolated envelope carries the history.
-    // Keeping only the current/analysis caps removes visible gaps in side view.
-    sliceItem.mesh.visible = !isoMode && (sectionMode ? selected : current || selected)
-    sliceItem.points.visible = isoMode && (passed || selected)
-    sliceItem.mesh.material.opacity = sectionMode
-      ? (selected ? 1 : 0)
-      : selected
-        ? 0.92
-        : current
-          ? 0.78
-          : passed
-            ? 0.28
-            : 0.012
-    sliceItem.points.material.opacity = selected ? 1 : current ? 0.86 : 0.4
-
-    const outlineColor = selected ? '#5ed7f2' : current ? '#f2c14e' : '#718c98'
-    const outlineOpacity = selected ? 0.64 : current ? 0.55 : passed ? 0.055 : 0.018
-    sliceItem.outerRim.material.color.set(outlineColor)
-    sliceItem.innerRim.material.color.set(outlineColor)
-    sliceItem.outerRim.material.opacity = outlineOpacity
-    sliceItem.innerRim.material.opacity = outlineOpacity
-    sliceItem.outerRim.visible = sectionMode ? selected : current || selected
-    sliceItem.innerRim.visible = sectionMode ? selected : current || selected
-    sliceItem.label.visible = selected || current
-    sliceItem.label.element.classList.toggle('selected', selected)
-    sliceItem.label.element.classList.toggle('current', current)
-  })
-  if (temporalEnvelope && temporalInnerWall) {
-    const intervalIndexCount = ANGULAR_STEPS * 6
-    const revealedIntervals = Math.ceil(currentRatio.value * (ENVELOPE_STEPS - 1))
-    const revealedIndexCount = revealedIntervals * intervalIndexCount
-    temporalEnvelope.geometry.setDrawRange(0, revealedIndexCount)
-    temporalInnerWall.geometry.setDrawRange(0, revealedIndexCount)
-    const showContinuousWalls = props.viewMode === 'cloud' && revealedIntervals > 0
-    temporalEnvelope.visible = showContinuousWalls
-    temporalInnerWall.visible = showContinuousWalls
+function createField() {
+  if (fieldPoints) {
+    rootGroup.remove(fieldPoints)
+    fieldPoints.geometry.dispose()
+    fieldPoints.material.dispose()
   }
-  updateTemporalTrajectories()
-  updateAnalysisBoreholes()
+  if (fieldSurface) {
+    rootGroup.remove(fieldSurface)
+    fieldSurface.geometry.dispose()
+    fieldSurface.material.dispose()
+  }
+
+  const pointCount = X_STEPS * (SURFACE_STEPS + 1) * RADIAL_STEPS
+  const positions = new Float32Array(pointCount * 3)
+  const colors = new Float32Array(pointCount * 3)
+  let vectorCursor = 0
+  for (let ri = 1; ri <= RADIAL_STEPS; ri += 1) {
+    const radialRatio = ri / RADIAL_STEPS
+    for (let xi = 0; xi < X_STEPS; xi += 1) {
+      const x = THREE.MathUtils.lerp(LONGITUDINAL_MIN, LONGITUDINAL_MAX, xi / (X_STEPS - 1))
+      for (let si = 0; si <= SURFACE_STEPS; si += 1) {
+        const surfaceRatio = si / SURFACE_STEPS
+        const base = archPoint(surfaceRatio)
+        const normal = archNormal(surfaceRatio)
+        positions[vectorCursor] = x
+        positions[vectorCursor + 1] = base.y + normal.y * FIELD_DEPTH_M * radialRatio
+        positions[vectorCursor + 2] = base.z + normal.z * FIELD_DEPTH_M * radialRatio
+        colorAt(fieldAt(x, surfaceRatio, radialRatio), scratchColor)
+        colors[vectorCursor] = scratchColor.r
+        colors[vectorCursor + 1] = scratchColor.g
+        colors[vectorCursor + 2] = scratchColor.b
+        vectorCursor += 3
+      }
+    }
+  }
+  const pointGeometry = new THREE.BufferGeometry()
+  pointGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  pointGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  pointGeometry.computeBoundingSphere()
+  fieldPointMaterial = new THREE.PointsMaterial({
+    size: props.compact ? .082 : .095,
+    sizeAttenuation: true,
+    transparent: true,
+    opacity: .6,
+    depthWrite: false,
+    vertexColors: true
+  })
+  fieldPoints = new THREE.Points(pointGeometry, fieldPointMaterial)
+  fieldPoints.name = '分层绘制三维反演场'
+  fieldPoints.renderOrder = 3
+  rootGroup.add(fieldPoints)
+
+  const surfaceVertexCount = X_STEPS * (SURFACE_STEPS + 1)
+  const surfacePositions = new Float32Array(surfaceVertexCount * 3)
+  const surfaceOutward = new Float32Array(surfaceVertexCount * 3)
+  const surfaceColors = new Float32Array(surfaceVertexCount * 3)
+  const surfaceIndices = []
+  let surfaceCursor = 0
+  for (let xi = 0; xi < X_STEPS; xi += 1) {
+    const x = THREE.MathUtils.lerp(LONGITUDINAL_MIN, LONGITUDINAL_MAX, xi / (X_STEPS - 1))
+    for (let si = 0; si <= SURFACE_STEPS; si += 1) {
+      const ratio = si / SURFACE_STEPS
+      const base = archPoint(ratio)
+      const normal = archNormal(ratio)
+      surfacePositions[surfaceCursor] = x
+      surfacePositions[surfaceCursor + 1] = base.y
+      surfacePositions[surfaceCursor + 2] = base.z
+      surfaceOutward[surfaceCursor] = normal.x
+      surfaceOutward[surfaceCursor + 1] = normal.y
+      surfaceOutward[surfaceCursor + 2] = normal.z
+      surfaceCursor += 3
+    }
+  }
+  for (let xi = 0; xi < X_STEPS - 1; xi += 1) {
+    for (let si = 0; si < SURFACE_STEPS; si += 1) {
+      const current = xi * (SURFACE_STEPS + 1) + si
+      const next = current + SURFACE_STEPS + 1
+      surfaceIndices.push(current, next, current + 1, current + 1, next, next + 1)
+    }
+  }
+  const surfaceGeometry = new THREE.BufferGeometry()
+  surfaceGeometry.setAttribute('position', new THREE.BufferAttribute(surfacePositions, 3))
+  surfaceGeometry.setAttribute('outward', new THREE.BufferAttribute(surfaceOutward, 3))
+  surfaceGeometry.setAttribute('color', new THREE.BufferAttribute(surfaceColors, 3))
+  surfaceGeometry.setIndex(surfaceIndices)
+  surfaceGeometry.computeBoundingSphere()
+  fieldSurfaceMaterial = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: .56,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    vertexColors: true
+  })
+  fieldSurface = new THREE.Mesh(surfaceGeometry, fieldSurfaceMaterial)
+  fieldSurface.userData.basePositions = surfacePositions.slice()
+  fieldSurface.userData.outward = surfaceOutward
+  fieldSurface.frustumCulled = false
+  fieldSurface.name = '当前径向分析等值面'
+  fieldSurface.renderOrder = 6
+  rootGroup.add(fieldSurface)
+
+  lastSurfaceBand = -1
+  updateAnalysisSlice(true)
+  updateProgress()
+  updateViewMode()
+  if (container.value) container.value.dataset.fieldPoints = String(pointCount)
+  requestRender()
+}
+
+function setCylinderMatrix(target, start, end, index) {
+  scratchDirection.subVectors(end, start)
+  const length = scratchDirection.length()
+  scratchMidpoint.copy(start).add(end).multiplyScalar(.5)
+  scratchQuaternion.setFromUnitVectors(cylinderAxis, scratchDirection.normalize())
+  scratchScale.set(1, length, 1)
+  scratchMatrix.compose(scratchMidpoint, scratchQuaternion, scratchScale)
+  target.setMatrixAt(index, scratchMatrix)
+}
+
+function setInstancePosition(target, position, index, scale = 1) {
+  scratchMatrix.compose(position, scratchIdentityQuaternion, scratchScale.setScalar(scale))
+  target.setMatrixAt(index, scratchMatrix)
+}
+
+function isSelectedBorehole(borehole, index) {
+  const selectedNumber = Number(props.selectedBoreholeId.match(/(\d+)$/)?.[1] || 1) - 1
+  return borehole?.id === props.selectedBoreholeId || index === selectedNumber
+}
+
+function createBoreholes() {
+  if (boreholeGroup) {
+    rootGroup.remove(boreholeGroup)
+    disposeObject(boreholeGroup)
+  }
+  boreholeEntries = []
+  sectionGroups.value.forEach((group) => {
+    group.boreholes.forEach((borehole, index) => {
+      const surfaceRatio = index / Math.max(group.boreholes.length - 1, 1)
+      const start = archPoint(surfaceRatio, .035)
+      start.x = group.longitudinalM
+      const normal = archNormal(surfaceRatio)
+      const end = start.clone().addScaledVector(normal, FIELD_DEPTH_M)
+      boreholeEntries.push({ borehole, index, group, start, normal, end })
+    })
+  })
+
+  boreholeGroup = new THREE.Group()
+  boreholeGroup.name = '巷道表面钻入围岩的三组实体钻孔'
+  const count = boreholeEntries.length
+  const tubeGeometry = new THREE.CylinderGeometry(.048, .048, 1, 8, 1, true)
+  const collarGeometry = new THREE.SphereGeometry(.075, 8, 6)
+  const headGeometry = new THREE.SphereGeometry(.085, 8, 6)
+  boreholeTubes = new THREE.InstancedMesh(
+    tubeGeometry,
+    new THREE.MeshBasicMaterial({ transparent: true, opacity: .82, depthWrite: false, vertexColors: true }),
+    count
+  )
+  boreholeCollars = new THREE.InstancedMesh(
+    collarGeometry,
+    new THREE.MeshBasicMaterial({ vertexColors: true }),
+    count
+  )
+  boreholeHeads = new THREE.InstancedMesh(
+    headGeometry,
+    new THREE.MeshBasicMaterial({ vertexColors: true }),
+    count
+  )
+  boreholeTubes.renderOrder = 7
+  boreholeCollars.renderOrder = 8
+  boreholeHeads.renderOrder = 8
+
+  boreholeEntries.forEach((entry, index) => {
+    setCylinderMatrix(boreholeTubes, entry.start, entry.end, index)
+    setInstancePosition(boreholeCollars, entry.start, index, 1)
+  })
+  boreholeTubes.instanceMatrix.needsUpdate = true
+  boreholeCollars.instanceMatrix.needsUpdate = true
+  boreholeGroup.add(boreholeTubes, boreholeCollars, boreholeHeads)
+  rootGroup.add(boreholeGroup)
+  updateBoreholeColors()
+  updateBoreholeHeads()
+}
+
+function updateBoreholeColors() {
+  if (!boreholeTubes || !boreholeCollars || !boreholeHeads) return
+  boreholeEntries.forEach((entry, index) => {
+    const selected = isSelectedBorehole(entry.borehole, entry.index)
+    boreholeTubes.setColorAt(index, scratchColor.set(selected ? '#e9fdff' : '#b7d6de'))
+    boreholeCollars.setColorAt(index, scratchColor.set(selected ? '#75e6f5' : '#d1e8ed'))
+    boreholeHeads.setColorAt(index, scratchColor.set(selected ? '#ffd16a' : '#d0ae58'))
+  })
+  if (boreholeTubes.instanceColor) boreholeTubes.instanceColor.needsUpdate = true
+  if (boreholeCollars.instanceColor) boreholeCollars.instanceColor.needsUpdate = true
+  if (boreholeHeads.instanceColor) boreholeHeads.instanceColor.needsUpdate = true
+  requestRender()
+}
+
+function updateBoreholeHeads() {
+  if (!boreholeHeads) return
+  const radialRatio = THREE.MathUtils.clamp(props.slice / 100, 0, 1)
+  boreholeEntries.forEach((entry, index) => {
+    const position = scratchMidpoint.copy(entry.start).addScaledVector(entry.normal, FIELD_DEPTH_M * radialRatio)
+    setInstancePosition(boreholeHeads, position, index, isSelectedBorehole(entry.borehole, entry.index) ? 1.28 : .82)
+  })
+  boreholeHeads.instanceMatrix.needsUpdate = true
+
+  const center = sectionGroups.value[Math.floor(sectionGroups.value.length / 2)]
+  const selectedIndex = Math.max(0, Number(props.selectedBoreholeId.match(/(\d+)$/)?.[1] || 1) - 1)
+  const borehole = center?.boreholes?.[selectedIndex]
+  const sample = sampleAtDepth(borehole, radialRatio)
+  if (borehole && sample) emit('sample', { borehole, sample, sliceProgress: props.slice })
+}
+
+function updateAnalysisSlice(force = false) {
+  if (!fieldSurfaceMaterial || !fieldSurface) return
+  const ratio = THREE.MathUtils.clamp(props.slice / 100, 0, 1)
+  const positionAttribute = fieldSurface.geometry.getAttribute('position')
+  const basePositions = fieldSurface.userData.basePositions
+  const outward = fieldSurface.userData.outward
+  const distance = FIELD_DEPTH_M * ratio
+  for (let index = 0; index < positionAttribute.array.length; index += 3) {
+    positionAttribute.array[index] = basePositions[index] + outward[index] * distance
+    positionAttribute.array[index + 1] = basePositions[index + 1] + outward[index + 1] * distance
+    positionAttribute.array[index + 2] = basePositions[index + 2] + outward[index + 2] * distance
+  }
+  positionAttribute.needsUpdate = true
+  const band = Math.round(ratio * RADIAL_STEPS)
+  if (force || band !== lastSurfaceBand) {
+    lastSurfaceBand = band
+    const sampledRatio = band / RADIAL_STEPS
+    const colorAttribute = fieldSurface.geometry.getAttribute('color')
+    let vertexIndex = 0
+    for (let xi = 0; xi < X_STEPS; xi += 1) {
+      const x = THREE.MathUtils.lerp(LONGITUDINAL_MIN, LONGITUDINAL_MAX, xi / (X_STEPS - 1))
+      for (let si = 0; si <= SURFACE_STEPS; si += 1) {
+        colorAt(fieldAt(x, si / SURFACE_STEPS, sampledRatio), scratchColor)
+        colorAttribute.setXYZ(vertexIndex, scratchColor.r, scratchColor.g, scratchColor.b)
+        vertexIndex += 1
+      }
+    }
+    colorAttribute.needsUpdate = true
+  }
+  updateBoreholeHeads()
+  requestRender()
+}
+
+function updateProgress() {
+  if (!fieldPoints) return
+  const ratio = THREE.MathUtils.clamp(props.progress / 100, 0, 1)
+  const visibleRadialBands = Math.ceil(ratio * RADIAL_STEPS)
+  fieldPoints.geometry.setDrawRange(0, visibleRadialBands * X_STEPS * (SURFACE_STEPS + 1))
+  requestRender()
+}
+
+function updateViewMode() {
+  if (!fieldPoints || !fieldSurface || !rockMass) return
+  const pointOpacity = props.viewMode === 'section' ? .12 : props.viewMode === 'iso' ? .72 : .56
+  const surfaceOpacity = props.viewMode === 'section' ? .82 : props.viewMode === 'iso' ? .28 : .58
+  fieldPointMaterial.opacity = pointOpacity
+  fieldPointMaterial.size = props.viewMode === 'iso' ? .105 : props.compact ? .082 : .095
+  fieldSurfaceMaterial.opacity = surfaceOpacity
+  fieldSurface.visible = props.viewMode !== 'iso'
+  rockMass.material[0].opacity = props.viewMode === 'section' ? .13 : .22
+  rockMass.material[1].opacity = props.viewMode === 'section' ? .075 : .13
+  cavitySurface.material.opacity = props.viewMode === 'section' ? .16 : .31
+  roadwayFloor.material.opacity = props.viewMode === 'section' ? .14 : .28
+  requestRender()
+}
+
+function updateAutoRotate() {
+  if (!controls) return
+  controls.autoRotate = props.autoRotate
+  if (!props.autoRotate) {
+    const dampingEnabled = controls.enableDamping
+    controls.enableDamping = false
+    controls.update()
+    controls.enableDamping = dampingEnabled
+  }
+  requestRender(350)
 }
 
 function disposeObject(object) {
   object.traverse?.((child) => {
     child.geometry?.dispose?.()
-    if (Array.isArray(child.material)) child.material.forEach(material => material.dispose())
+    if (Array.isArray(child.material)) child.material.forEach((material) => material.dispose())
     else child.material?.dispose?.()
   })
-}
-
-function rebuildAnalysisBoreholes() {
-  if (!rootGroup) return
-  if (analysisBoreholeGroup) {
-    rootGroup.remove(analysisBoreholeGroup)
-    disposeObject(analysisBoreholeGroup)
-  }
-  boreholeObjects.length = 0
-  boreholeTargets.length = 0
-  analysisBoreholeGroup = new THREE.Group()
-  analysisBoreholeGroup.name = '选中切面钻孔分析层'
-  rootGroup.add(analysisBoreholeGroup)
-
-  props.boreholes.forEach((borehole) => {
-    const angle = THREE.MathUtils.degToRad(Number(borehole.angleDeg || 0))
-    const path = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints([pointOnRing(TUNNEL_RADIUS, angle), pointOnRing(CLOUD_RADIUS, angle)]),
-      new THREE.LineDashedMaterial({ color: '#7d929b', transparent: true, opacity: 0.42, dashSize: 0.09, gapSize: 0.06, depthWrite: false })
-    )
-    path.computeLineDistances()
-    analysisBoreholeGroup.add(path)
-
-    const activeLine = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: '#5ed7f2', transparent: true, opacity: 0.9, depthWrite: false }))
-    analysisBoreholeGroup.add(activeLine)
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.065, 12, 10), new THREE.MeshBasicMaterial({ color: '#5ed7f2', depthWrite: false }))
-    analysisBoreholeGroup.add(head)
-    const target = new THREE.Mesh(new THREE.SphereGeometry(0.22, 10, 8), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }))
-    target.userData.boreholeId = borehole.id
-    analysisBoreholeGroup.add(target)
-    boreholeTargets.push(target)
-
-    const label = makeLabel(borehole.role === 'special-variable-stress' ? 'borehole-label special' : 'borehole-label')
-    label.position.copy(pointOnRing(CLOUD_RADIUS + 0.38, angle))
-    analysisBoreholeGroup.add(label)
-    boreholeObjects.push({ borehole, angle, path, activeLine, head, target, label })
-  })
-  updateAnalysisBoreholes()
-}
-
-function formatValue(value, digits = 0) {
-  const number = Number(value)
-  return Number.isFinite(number) ? number.toFixed(digits) : '--'
-}
-
-function updateAnalysisBoreholes() {
-  if (!analysisBoreholeGroup) return
-  const ratio = selectedRatio.value
-  const selectedX = (selectedSliceIndex.value / (SLICE_COUNT - 1) - 0.5) * VOLUME_LENGTH
-  analysisBoreholeGroup.position.x = selectedX + 0.035
-  analysisBoreholeGroup.visible = props.viewMode !== 'iso'
-
-  boreholeObjects.forEach((item) => {
-    const sample = sampleAtRatio(item.borehole, ratio)
-    const prediction = sample?.predictions?.[props.modelId] || {}
-    const color = colorAt(normalizedField(sample))
-    const start = pointOnRing(TUNNEL_RADIUS, item.angle)
-    const end = pointOnRing(TUNNEL_RADIUS + (CLOUD_RADIUS - TUNNEL_RADIUS) * ratio, item.angle)
-    item.activeLine.geometry.dispose()
-    item.activeLine.geometry = new THREE.BufferGeometry().setFromPoints([start, end])
-    item.activeLine.material.color.copy(color)
-    item.head.position.copy(end)
-    item.head.material.color.copy(color)
-    item.target.position.copy(end)
-    const selected = item.borehole.id === props.selectedBoreholeId
-    item.path.material.opacity = selected ? 0.9 : 0.3
-    item.path.material.color.set(selected ? '#f1f5f7' : item.borehole.role === 'special-variable-stress' ? '#c5a25b' : '#7d929b')
-    item.head.scale.setScalar(selected ? 1.6 : 1)
-    item.label.visible = selected
-    item.label.element.classList.toggle('selected', selected)
-    item.label.element.innerHTML = `
-      <span>${item.borehole.id} · ${item.borehole.label}${item.borehole.role === 'special-variable-stress' ? ' · 变应力' : ''}</span>
-      <strong>${props.metric === 'damage' ? `${formatValue(prediction.damage)}%` : props.metric === 'error' ? `E ${formatValue(normalizedField(sample), 2)}` : `${formatValue(prediction.stress, 1)} MPa`}</strong>`
-  })
-
-  const selectedHole = props.boreholes.find(item => item.id === props.selectedBoreholeId) || props.boreholes[0]
-  if (selectedHole) emit('sample', { borehole: selectedHole, sample: sampleAtRatio(selectedHole, ratio), sliceProgress: props.slice })
-}
-
-function updateViewMode() {
-  if (!temporalSlices.length) return
-  tunnelMesh.material.opacity = props.viewMode === 'section' ? 0.012 : 0.028
-  tunnelWire.material.opacity = props.viewMode === 'section' ? 0.008 : 0.012
-  temporalCage.visible = props.viewMode !== 'section'
-  const showContinuousWalls = props.viewMode === 'cloud' && currentRatio.value > 0
-  if (temporalEnvelope) temporalEnvelope.visible = showContinuousWalls
-  if (temporalInnerWall) temporalInnerWall.visible = showContinuousWalls
-  recolorVolume()
-  updateVolumeState()
-}
-
-function onPointerMove(event) {
-  hovered.value = true
-  if (!container.value || !raycaster || !camera) return
-  const rect = container.value.getBoundingClientRect()
-  pointer.x = (event.clientX - rect.left) / rect.width * 2 - 1
-  pointer.y = -((event.clientY - rect.top) / rect.height * 2 - 1)
-  raycaster.setFromCamera(pointer, camera)
-  const hitsBorehole = raycaster.intersectObjects(boreholeTargets, false).length > 0
-  const hitsSlice = raycaster.intersectObjects(sliceHitTargets.filter(item => item.visible), false).length > 0
-  container.value.style.cursor = hitsBorehole || hitsSlice ? 'pointer' : 'grab'
-}
-
-function onSceneClick(event) {
-  if (event.target.closest?.('.slice-selector')) return
-  raycaster.setFromCamera(pointer, camera)
-  const boreholeHit = raycaster.intersectObjects(boreholeTargets, false)[0]
-  if (boreholeHit?.object?.userData?.boreholeId) {
-    emit('select', boreholeHit.object.userData.boreholeId)
-    return
-  }
-  const sliceHit = raycaster.intersectObjects(sliceHitTargets.filter(item => item.visible), false)[0]
-  if (sliceHit?.object?.userData?.sliceIndex !== undefined) selectSlice(sliceHit.object.userData.sliceIndex)
 }
 
 function init() {
   if (!container.value) return
   try {
     scene = new THREE.Scene()
-    scene.fog = new THREE.FogExp2('#06111a', 0.018)
-    camera = new THREE.PerspectiveCamera(34, container.value.clientWidth / container.value.clientHeight, 0.1, 100)
-    camera.position.set(8.6, 5.8, 16.4)
+    scene.fog = new THREE.FogExp2('#06111a', .018)
+    camera = new THREE.PerspectiveCamera(34, container.value.clientWidth / container.value.clientHeight, .1, 120)
+    camera.position.set(17.8, 9.4, 19.6)
 
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.7))
-    renderer.setSize(container.value.clientWidth, container.value.clientHeight)
+    renderer = new THREE.WebGLRenderer({
+      antialias: !props.compact,
+      alpha: true,
+      powerPreference: 'high-performance',
+      precision: 'mediump'
+    })
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, props.compact ? 1 : 1.25))
+    renderer.setSize(container.value.clientWidth, container.value.clientHeight, false)
     renderer.setClearColor(0x000000, 0)
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.08
     container.value.prepend(renderer.domElement)
-
-    labelRenderer = new CSS2DRenderer()
-    labelRenderer.setSize(container.value.clientWidth, container.value.clientHeight)
-    labelRenderer.domElement.className = 'three-label-layer'
-    Object.assign(labelRenderer.domElement.style, { position: 'absolute', inset: '0', pointerEvents: 'none', zIndex: '2' })
-    container.value.append(labelRenderer.domElement)
+    container.value.dataset.maxFps = String(MAX_RENDER_FPS)
 
     controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
-    controls.dampingFactor = 0.055
-    controls.minDistance = 10
-    controls.maxDistance = 34
+    controls.dampingFactor = .07
+    controls.minDistance = 13
+    controls.maxDistance = 46
+    controls.target.set(0, .5, 0)
     controls.autoRotate = props.autoRotate
-    controls.autoRotateSpeed = 0.32
-    controls.target.set(0, 0, 0)
+    controls.autoRotateSpeed = .24
+    controls.addEventListener('start', () => {
+      controlsDragging = true
+      requestRender()
+    })
+    controls.addEventListener('change', () => requestRender(180))
+    controls.addEventListener('end', () => {
+      controlsDragging = false
+      requestRender(450)
+    })
 
     scene.add(new THREE.HemisphereLight('#d9edf2', '#071019', 1.2))
-    const keyLight = new THREE.DirectionalLight('#d7eef2', 2.15)
-    keyLight.position.set(7, 9, 11)
-    scene.add(keyLight)
-    const fillLight = new THREE.DirectionalLight('#5b85a0', 1.4)
-    fillLight.position.set(-8, -2, -7)
-    scene.add(fillLight)
+    const key = new THREE.DirectionalLight('#e7f8fb', 1.65)
+    key.position.set(8, 12, 9)
+    scene.add(key)
+    const fill = new THREE.DirectionalLight('#537f8c', .85)
+    fill.position.set(-9, 2, -8)
+    scene.add(fill)
 
     rootGroup = new THREE.Group()
-    rootGroup.rotation.x = -0.03
+    rootGroup.rotation.x = -.025
     scene.add(rootGroup)
-    createTunnelReference()
-    createTemporalCage()
-    createTemporalEnvelope()
-    createTemporalInnerWall()
-    createTemporalVolume()
-    rebuildTemporalTrajectories()
-    rebuildAnalysisBoreholes()
+    createRockMass()
+    createRoadwayCavity()
+    createSectionGuides()
+    createBoreholes()
+    createField()
 
-    raycaster = new THREE.Raycaster()
-    pointer = new THREE.Vector2()
-    clock = new THREE.Clock()
     resizeObserver = new ResizeObserver(() => {
-      if (!container.value || !renderer || !camera) return
-      const width = container.value.clientWidth
-      const height = container.value.clientHeight
+      const width = Math.max(container.value?.clientWidth || 1, 1)
+      const height = Math.max(container.value?.clientHeight || 1, 1)
       camera.aspect = width / height
       camera.updateProjectionMatrix()
-      renderer.setSize(width, height)
-      labelRenderer.setSize(width, height)
+      renderer.setSize(width, height, false)
+      requestRender()
     })
     resizeObserver.observe(container.value)
+
+    intersectionObserver = new IntersectionObserver(([entry]) => {
+      isIntersecting = entry?.isIntersecting ?? true
+      if (isIntersecting) requestRender()
+    }, { threshold: .02 })
+    intersectionObserver.observe(container.value)
     animate()
   } catch (error) {
     webglReady.value = false
     webglError.value = error?.message || String(error)
-    console.error(error)
   }
 }
 
-function animate() {
+function animate(timestamp = 0) {
   animationFrame = requestAnimationFrame(animate)
-  const elapsed = clock.getElapsedTime()
+  if (!renderer || !isIntersecting || document.visibilityState === 'hidden') return
+  const active = props.autoRotate || controlsDragging || renderRequested || timestamp < settleUntil
+  if (!active || timestamp - lastFrameTime < FRAME_INTERVAL) return
+  lastFrameTime = timestamp
+  controls.autoRotate = props.autoRotate
   controls.update()
-  const currentItem = temporalSlices[currentSliceIndex.value]
-  if (currentItem) {
-    const pulse = props.playing ? 0.72 + Math.sin(elapsed * 3.2) * 0.12 : 0.78
-    if (currentItem.index !== selectedSliceIndex.value) {
-      currentItem.outerRim.material.opacity = pulse
-      currentItem.innerRim.material.opacity = pulse
-    }
-  }
   renderer.render(scene, camera)
-  labelRenderer.render(scene, camera)
+  renderRequested = false
 }
 
-watch(() => props.boreholes, () => {
-  recolorVolume()
-  rebuildTemporalTrajectories()
-  rebuildAnalysisBoreholes()
-})
-watch(() => [props.metric, props.modelId], () => {
-  recolorVolume()
-  updateAnalysisBoreholes()
-})
-watch(() => props.progress, updateVolumeState)
-watch(() => props.slice, updateVolumeState)
-watch(() => props.selectedBoreholeId, () => {
-  updateTemporalTrajectories()
-  updateAnalysisBoreholes()
-})
-watch(() => props.autoRotate, (enabled) => {
-  if (!controls) return
-  controls.autoRotate = enabled
-  if (!enabled) {
-    // Flush OrbitControls' remaining damping delta so "stop" is immediate.
-    const dampingEnabled = controls.enableDamping
-    controls.enableDamping = false
-    controls.update()
-    controls.enableDamping = dampingEnabled
-  }
-})
+watch(() => props.progress, updateProgress)
+watch(() => props.slice, () => updateAnalysisSlice())
 watch(() => props.viewMode, updateViewMode)
+watch(() => props.autoRotate, updateAutoRotate)
+watch(() => props.metric, createField)
+watch(() => props.spatialGroups, () => {
+  if (!rootGroup) return
+  createSectionGuides()
+  createBoreholes()
+  createField()
+}, { deep: false })
+watch(() => props.selectedBoreholeId, () => {
+  updateBoreholeColors()
+  updateBoreholeHeads()
+})
 
 onMounted(init)
-
 onBeforeUnmount(() => {
   cancelAnimationFrame(animationFrame)
   resizeObserver?.disconnect()
+  intersectionObserver?.disconnect()
   controls?.dispose()
   if (scene) disposeObject(scene)
   renderer?.dispose()
   renderer?.domElement?.remove()
-  labelRenderer?.domElement?.remove()
 })
 </script>
 
 <style scoped>
 .volume-cloud-canvas { position: absolute; inset: 0; overflow: hidden; }
-.volume-cloud-canvas::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 52% 46%, transparent 35%, rgba(4, 13, 21, .18) 76%, rgba(3, 10, 17, .58) 100%); }
+.volume-cloud-canvas::after { position: absolute; inset: 0; z-index: 1; content: ''; pointer-events: none; background: radial-gradient(circle at 52% 45%, transparent 46%, rgba(3, 10, 17, .46) 100%); }
 .volume-cloud-canvas :deep(canvas) { display: block; width: 100%; height: 100%; outline: none; }
-.volume-cloud-canvas :deep(.three-label-layer) { overflow: hidden; }
-.volume-cloud-canvas :deep(.spatial-label) { color: #8ea6af; font: 7px/1.2 Electronic, monospace; white-space: nowrap; pointer-events: none; }
-.volume-cloud-canvas :deep(.borehole-label) { min-width: 68px; padding: 3px 5px; text-align: center; background: rgba(7, 18, 26, .82); border: 1px solid rgba(129, 160, 172, .2); transform: scale(.82); transition: .2s ease; }
-.volume-cloud-canvas :deep(.borehole-label span) { display: block; color: #708c98; font-size: 6px; }
-.volume-cloud-canvas :deep(.borehole-label strong) { display: block; margin-top: 2px; color: #d9e6e9; font-size: 8px; font-weight: 400; }
-.volume-cloud-canvas :deep(.borehole-label.special) { border-color: rgba(194, 166, 96, .5); border-style: dashed; }
-.volume-cloud-canvas :deep(.borehole-label.selected) { border-color: #5ed7f2; background: rgba(8, 31, 42, .94); box-shadow: 0 0 10px rgba(94, 215, 242, .18); transform: scale(.96); }
-.volume-cloud-canvas :deep(.slice-label) { padding: 3px 6px; text-align: center; background: rgba(7, 17, 24, .76); border-bottom: 1px solid #718c98; }
-.volume-cloud-canvas :deep(.slice-label span) { color: #718c98; font-size: 6px; }
-.volume-cloud-canvas :deep(.slice-label strong) { display: block; color: #b6c6cc; font-size: 8px; font-weight: 400; }
-.volume-cloud-canvas :deep(.slice-label.selected) { border-color: #5ed7f2; }
-.volume-cloud-canvas :deep(.slice-label.selected strong) { color: #8ce7f7; }
-.volume-cloud-canvas :deep(.slice-label.current:not(.selected)) { border-color: #f2c14e; }
-.volume-cloud-canvas :deep(.slice-label.current:not(.selected) strong) { color: #f2c14e; }
-.volume-cloud-canvas :deep(.time-axis-label) { min-width: 160px; padding: 4px 7px; background: rgba(7, 17, 24, .78); border-left: 2px solid #8ea2aa; }
-.volume-cloud-canvas :deep(.time-axis-label span) { color: #d5e0e3; font-size: 9px; }
-.volume-cloud-canvas :deep(.time-axis-label strong), .volume-cloud-canvas :deep(.time-axis-label small) { display: block; color: #8ea2aa; font-size: 6px; font-weight: 400; }
-.volume-cloud-canvas.compact .coordinate-note,
-.volume-cloud-canvas.compact .slice-selector,
-.volume-cloud-canvas.compact .view-hint,
-.volume-cloud-canvas.compact :deep(.time-axis-label),
-.volume-cloud-canvas.compact .slice-status span:last-child { display: none; }
-.volume-cloud-canvas.compact .field-header { top: 10px; left: 11px; }
-.volume-cloud-canvas.compact .field-symbol { min-width: 58px; height: 28px; }
-.volume-cloud-canvas.compact .slice-status { top: 11px; right: 10px; }
-.volume-cloud-canvas.compact .mode-note { top: 44px; }
-.volume-cloud-canvas.compact .continuous-note { color: #c9d8dc; border-color: rgba(0, 168, 107, .32); }
-.volume-cloud-canvas.compact .continuous-note i { background: #00a86b; box-shadow: 0 0 7px rgba(0, 168, 107, .55); }
 .field-header { position: absolute; z-index: 4; top: 14px; left: 14px; display: flex; align-items: center; gap: 9px; pointer-events: none; }
-.field-symbol { display: grid; place-items: center; min-width: 66px; height: 32px; color: #dce8eb; font: 11px Georgia, serif; font-style: italic; background: rgba(7, 18, 26, .72); border: 1px solid rgba(132, 164, 175, .28); }
+.field-symbol { display: grid; place-items: center; min-width: 76px; height: 34px; color: #e1edf0; font: italic 11px Georgia, serif; background: rgba(7, 18, 26, .78); border: 1px solid rgba(132, 164, 175, .3); }
 .field-header strong, .field-header small { display: block; }
 .field-header strong { color: #d4e1e4; font-size: 10px; font-weight: 500; letter-spacing: 1px; }
-.field-header small { margin-top: 2px; color: #607b87; font-size: 6px; letter-spacing: 1.2px; }
-.coordinate-note { position: absolute; z-index: 4; top: 54px; left: 14px; display: flex; gap: 4px; pointer-events: none; }
-.coordinate-note span { padding: 3px 6px; color: #6f8893; font-size: 7px; background: rgba(7, 18, 26, .64); border: 1px solid rgba(113, 145, 157, .16); }
-.coordinate-note b { margin-right: 3px; color: #cbd9dc; font-family: Georgia, serif; font-style: italic; }
-.slice-status { position: absolute; z-index: 4; top: 15px; right: 16px; display: flex; gap: 5px; pointer-events: none; }
-.slice-status span { display: flex; align-items: center; gap: 5px; padding: 4px 7px; color: #708893; font-size: 7px; background: rgba(7, 18, 26, .7); border: 1px solid rgba(115, 146, 157, .17); }
-.slice-status i { width: 10px; height: 2px; background: #718c98; }
-.slice-status .status-current { color: #c6ad63; }.slice-status .status-current i { background: #f2c14e; }
-.slice-status .status-selected { color: #75cadd; }.slice-status .status-selected i { background: #5ed7f2; }
-.slice-selector { position: absolute; z-index: 6; left: 50%; bottom: 54px; width: min(410px, 54%); padding: 6px 9px; transform: translateX(-50%); background: rgba(6, 16, 24, .84); border: 1px solid rgba(123, 153, 164, .2); backdrop-filter: blur(7px); }
-.selector-title, .selector-axis { display: flex; justify-content: space-between; color: #5f7883; font: 6px Electronic, monospace; }
-.selector-title strong { color: #9fb2ba; font-weight: 400; }
-.selector-track { display: grid; grid-template-columns: repeat(17, 1fr); gap: 3px; margin: 5px 0 4px; }
-.selector-track button { appearance: none; height: 14px; padding: 0; background: transparent; border: 0; cursor: pointer; }
-.selector-track button i { display: block; width: 100%; height: 3px; background: #29404b; transition: .18s ease; }
-.selector-track button:hover i, .selector-track button.passed i { background: #607c87; }
-.selector-track button.current i { height: 6px; background: #f2c14e; }
-.selector-track button.selected i { height: 9px; background: #5ed7f2; box-shadow: 0 0 6px rgba(94, 215, 242, .32); }
-.view-hint { position: absolute; z-index: 4; left: 17px; bottom: 15px; display: flex; align-items: center; gap: 7px; color: rgba(154, 180, 190, .42); font-size: 8px; opacity: .58; transition: opacity .2s; }
-.view-hint.visible { opacity: 1; }.view-hint i { width: 1px; height: 9px; background: rgba(137, 165, 176, .25); }
-.mode-note { position: absolute; z-index: 4; left: 50%; top: 51px; display: flex; align-items: center; gap: 7px; padding: 5px 10px; transform: translateX(-50%); color: #9eb2ba; font-size: 7px; letter-spacing: 1.3px; background: rgba(7, 18, 26, .78); border: 1px solid rgba(127, 159, 170, .18); pointer-events: none; }
-.mode-note i { width: 16px; height: 1px; background: #5ed7f2; }
+.field-header small { margin-top: 3px; color: #64818c; font-size: 6px; letter-spacing: 1px; }
+.coordinate-note { position: absolute; z-index: 4; top: 57px; left: 14px; display: flex; gap: 4px; pointer-events: none; }
+.coordinate-note span, .spatial-status, .depth-readout { color: #78929c; background: rgba(7, 18, 26, .72); border: 1px solid rgba(113, 145, 157, .18); }
+.coordinate-note span { padding: 4px 7px; font-size: 7px; }
+.coordinate-note b { margin-right: 3px; color: #d5e2e5; font-family: Georgia, serif; }
+.spatial-status { position: absolute; z-index: 4; top: 14px; right: 15px; display: flex; align-items: center; gap: 8px; padding: 6px 8px; font-size: 7px; }
+.spatial-status i { width: 6px; height: 6px; background: #54d7a1; border-radius: 50%; box-shadow: 0 0 8px rgba(84, 215, 161, .7); }
+.spatial-status strong { color: #d9e6e8; font-weight: 500; }
+.section-key { position: absolute; z-index: 4; right: 15px; top: 48px; display: flex; gap: 4px; pointer-events: none; }
+.section-key > span { display: grid; grid-template-columns: 4px auto; column-gap: 5px; padding: 5px 7px; background: rgba(6, 17, 24, .76); border: 1px solid rgba(115, 158, 170, .18); }
+.section-key i { grid-row: 1 / 3; width: 3px; background: #69ccde; }
+.section-key strong { color: #cadadd; font-size: 7px; font-weight: 500; }
+.section-key small { color: #607a85; font-size: 6px; }
+.depth-readout { position: absolute; z-index: 4; right: 16px; bottom: 15px; min-width: 105px; padding: 6px 8px; text-align: right; pointer-events: none; }
+.depth-readout span { display: block; font-size: 6px; }
+.depth-readout strong { display: block; margin-top: 2px; color: #e2ecee; font: 12px Electronic, monospace; }
+.depth-readout em { color: #718a94; font-size: 7px; font-style: normal; }
+.view-hint { position: absolute; z-index: 4; left: 16px; bottom: 15px; display: flex; align-items: center; gap: 7px; color: rgba(154, 180, 190, .48); font-size: 8px; opacity: .58; transition: opacity .2s; }
+.view-hint.visible { opacity: 1; }
+.view-hint i { width: 1px; height: 9px; background: rgba(137, 165, 176, .25); }
 .webgl-fallback { position: absolute; inset: 0; z-index: 10; display: grid; place-content: center; gap: 8px; text-align: center; color: #8fa8b2; background: rgba(5, 13, 20, .95); }
 .webgl-fallback strong { color: #8ce7f7; letter-spacing: 3px; }
-@media (max-width: 1100px) { .coordinate-note { display: none; } .volume-cloud-canvas :deep(.borehole-label) { transform: scale(.7); } }
+.volume-cloud-canvas.compact .coordinate-note { display: none; }
+.volume-cloud-canvas.compact .field-header { top: 10px; left: 11px; }
+.volume-cloud-canvas.compact .spatial-status { top: 10px; right: 10px; }
+.volume-cloud-canvas.compact .section-key { top: 44px; right: 10px; }
+@media (max-width: 1100px) {
+  .section-key { display: none; }
+  .spatial-status strong { display: none; }
+}
 </style>

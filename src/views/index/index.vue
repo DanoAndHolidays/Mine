@@ -23,6 +23,10 @@
           </span>
           <span><strong>导入数据</strong><small>IMPORT DATA</small></span>
         </button>
+        <router-link class="relief-entry" to="/detail" title="进入卸压决策">
+          <span class="relief-entry-icon" aria-hidden="true">→</span>
+          <span><strong>进入卸压决策</strong><small>RELIEF DECISION</small></span>
+        </router-link>
       </div>
     </header>
 
@@ -118,6 +122,7 @@
                 :speed="evolutionSpeed"
                 :model-id="store.selectedModel"
                 :boreholes="store.boreholes"
+                :spatial-groups="store.spatialRoadway?.groups || []"
                 :selected-borehole-id="store.selectedBoreholeId"
                 :max-depth="store.ringCloud?.meta.depthRangeCm?.[1] || 125"
                 @sample="cloudSample = $event"
@@ -143,6 +148,7 @@
                 :speed="evolutionSpeed"
                 :model-id="store.selectedModel"
                 :boreholes="store.boreholes"
+                :spatial-groups="store.spatialRoadway?.groups || []"
                 :selected-borehole-id="store.selectedBoreholeId"
                 :max-depth="store.ringCloud?.meta.depthRangeCm?.[1] || 125"
                 @select="store.selectedBoreholeId = $event"
@@ -604,9 +610,9 @@ const stressMetric = { label: '反演应力', unit: 'MPa', ticks: ['40', '32', '
 const damageMetric = { label: '反演损伤', unit: '%', ticks: ['80', '64', '48', '32', '16', '0'] }
 
 const views = [
-  { key: 'cloud', label: '时序体云', icon: '▱' },
-  { key: 'section', label: '单切面', icon: '◫' },
-  { key: 'iso', label: '等值点云', icon: '∴' }
+  { key: 'cloud', label: '三维围岩', icon: '▱' },
+  { key: 'section', label: '分析切面', icon: '◫' },
+  { key: 'iso', label: '场点分布', icon: '∴' }
 ]
 
 // ---- computed from store ----
@@ -663,11 +669,11 @@ const trendCurrent = computed(() => trendCoordinates.value[telemetryIndex.value]
 const findings = computed(() => {
   if (!store.ringCloud) return ['加载 Vtest4 环形钻孔数据中...']
   return [
-    `${store.ringCloud.meta.boreholeCount} 组数据已按钻孔映射到垂直巷道轴线的 YZ 环形截面`,
+    'A / B / C 三组共 33 个钻孔已沿巷道纵向组成空间反演场',
     `拟合采用 ${store.ringCloud.meta.fittingMethod}，曲线平均粗糙度降低 ${(store.ringCloud.meta.meanRoughnessReduction * 100).toFixed(1)}%`,
-    '径向位置代表 0–125 cm 钻进深度，时间轴逐步揭露已钻区域的状态场',
-    'VTEST_S99 为 10–40 MPa 变应力复合孔，已使用虚线标签单独区分',
-    '数据中未发现显式泄压/卸压字段或模型，未将特殊工况误标为泄压结果'
+    '钻孔从拱形巷道表面向半透明围岩实体内部延伸，径向范围为 0–125 cm',
+    '应力场和损伤场采用相同的三维围岩坐标，可直接进行空间位置对照',
+    '卸压前后模型与参数决策已在卸压决策页面独立接入'
   ]
 })
 
@@ -1513,6 +1519,54 @@ onBeforeUnmount(() => {
 .import-data-trigger > span:last-child { display: flex; flex-direction: column; gap: 2px; }
 .import-data-trigger strong { font-size: 11px; font-weight: 600; letter-spacing: 1.3px; white-space: nowrap; }
 .import-data-trigger small { color: #657f89; font-size: 6px; letter-spacing: 1.2px; white-space: nowrap; }
+.relief-entry {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 9px;
+  height: 42px;
+  min-width: 142px;
+  padding: 0 12px 0 9px;
+  color: #eff9f5;
+  text-align: left;
+  text-decoration: none;
+  background:
+    linear-gradient(135deg, rgba(77, 188, 143, .24), rgba(46, 113, 91, .08)),
+    rgba(7, 23, 24, .9);
+  border: 1px solid rgba(105, 213, 167, .58);
+  clip-path: polygon(0 0, calc(100% - 8px) 0, 100% 8px, 100% 100%, 8px 100%, 0 calc(100% - 8px));
+  transition: color .2s ease, border-color .2s ease, background .2s ease, transform .2s ease;
+}
+.relief-entry::after {
+  position: absolute;
+  right: 8px;
+  bottom: 5px;
+  width: 28px;
+  height: 1px;
+  background: #75d1a8;
+  content: '';
+  opacity: .75;
+}
+.relief-entry:hover {
+  color: #fff;
+  background: linear-gradient(135deg, rgba(84, 207, 157, .34), rgba(46, 113, 91, .13)), rgba(7, 23, 24, .94);
+  border-color: rgba(130, 239, 193, .88);
+  transform: translateY(-1px);
+}
+.relief-entry-icon {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  color: #8ee0bd;
+  font: 18px/1 Arial, sans-serif;
+  background: rgba(92, 203, 157, .09);
+  border: 1px solid rgba(112, 222, 175, .3);
+}
+.relief-entry > span:last-child { display: flex; flex-direction: column; gap: 2px; }
+.relief-entry strong { font-size: 11px; font-weight: 600; letter-spacing: 1.1px; white-space: nowrap; }
+.relief-entry small { color: #6c9383; font-size: 6px; letter-spacing: 1.1px; white-space: nowrap; }
 
 /* Data import modal */
 .import-modal-backdrop {
@@ -1688,14 +1742,18 @@ onBeforeUnmount(() => {
 .import-modal-enter-from .import-dialog, .import-modal-leave-to .import-dialog { opacity: 0; transform: translateY(10px) scale(.985); }
 
 @media (max-width: 1500px) {
-  .top-header { grid-template-columns: 190px minmax(0, 1fr) 340px; }
+  .top-header { grid-template-columns: 190px minmax(0, 1fr) 430px; }
   .system-state { gap: 12px; }
   .clock { padding-right: 12px; }
 }
 
 @media (max-width: 1220px) {
-  .top-header { grid-template-columns: 175px minmax(0, 1fr) 290px; }
+  .top-header { grid-template-columns: 175px minmax(0, 1fr) 276px; }
   .online { display: none; }
+  .clock { display: none; }
+  .system-state { gap: 8px; }
+  .import-data-trigger { min-width: 112px; }
+  .relief-entry { min-width: 136px; }
 }
 
 @media (max-height: 780px) {
