@@ -2,7 +2,7 @@
   <div
     ref="container"
     class="volume-cloud-canvas"
-    :class="{ compact }"
+    :class="[viewMode, { compact }]"
     @pointerenter="hovered = true"
     @pointerleave="hovered = false"
   >
@@ -16,13 +16,17 @@
       <span><b>r</b> 径向钻深 0-{{ maxDepth }} cm</span>
     </div>
     <div class="spatial-status">
-      <span><i></i>A / B / C 三个实测反演断面</span>
-      <strong>33 孔空间联合插值</strong>
+      <span><i></i>{{ sectionGroups.length }} 个实测反演断面</span>
+      <strong>{{ totalBoreholes }} 孔空间联合插值</strong>
     </div>
     <div class="section-key">
-      <span v-for="group in sectionGroups" :key="group.id">
+      <span v-for="group in sectionGroups" :key="group.id" :class="{ active: group.id === selectedGroupId }">
         <i></i><strong>{{ group.id }}组</strong><small>{{ group.longitudinalM }} m · 11孔</small>
       </span>
+    </div>
+    <div class="mode-readout">
+      <strong>{{ viewModeMeta.title }}</strong>
+      <span>{{ viewModeMeta.detail }}</span>
     </div>
     <div class="depth-readout">
       <span>当前径向分析深度</span>
@@ -56,6 +60,7 @@ const props = defineProps({
   boreholes: { type: Array, default: () => [] },
   spatialGroups: { type: Array, default: () => [] },
   selectedBoreholeId: { type: String, default: 'BH-01' },
+  selectedGroupId: { type: String, default: 'B' },
   maxDepth: { type: Number, default: 125 }
 })
 
@@ -66,6 +71,12 @@ const webglReady = ref(true)
 const webglError = ref('')
 const selectedDepth = computed(() => props.maxDepth * THREE.MathUtils.clamp(props.slice / 100, 0, 1))
 const sectionGroups = computed(() => props.spatialGroups.slice().sort((a, b) => a.longitudinalM - b.longitudinalM))
+const totalBoreholes = computed(() => sectionGroups.value.reduce((total, group) => total + (group.boreholes?.length || 0), 0))
+const viewModeMeta = computed(() => {
+  if (props.viewMode === 'section') return { title: '单切面解析', detail: `${selectedDepth.value.toFixed(1)} cm 径向等值面` }
+  if (props.viewMode === 'iso') return { title: '离散场点', detail: '空间采样点直接分布' }
+  return { title: '完整三维围岩', detail: '多层体场 + 半透明岩体' }
+})
 const metricMeta = computed(() => {
   if (props.metric === 'damage') return { symbol: 'D(X,S,r)', title: '三维损伤反演场', subtitle: 'ARCHED ROADWAY · SPATIAL FIELD' }
   if (props.metric === 'error') return { symbol: 'E(X,S,r)', title: '三维置信误差场', subtitle: 'CONFIDENCE-WEIGHTED SPATIAL FIELD' }
@@ -89,9 +100,9 @@ const MAX_RENDER_FPS = 30
 const FRAME_INTERVAL = 1000 / MAX_RENDER_FPS
 
 let scene, camera, renderer, controls, resizeObserver, intersectionObserver, animationFrame
-let rootGroup, fieldPoints, fieldSurface, rockMass, rockEdges, cavitySurface, roadwayFloor
+let rootGroup, fieldPoints, fieldSurface, fieldLayerGroup, rockMass, rockEdges, cavitySurface, roadwayFloor
 let boreholeGroup, boreholeTubes, boreholeCollars, boreholeHeads, sectionGuideGroup
-let fieldPointMaterial, fieldSurfaceMaterial
+let fieldPointMaterial, fieldSurfaceMaterial, fieldLayerMaterial
 let isIntersecting = true
 let controlsDragging = false
 let renderRequested = true
@@ -326,6 +337,7 @@ function createSectionGuides() {
   sectionGuideGroup = new THREE.Group()
   const colors = ['#6bc8d8', '#e1bc65', '#6bc8d8']
   sectionGroups.value.forEach((group, groupIndex) => {
+    const active = group.id === props.selectedGroupId
     const inner = []
     const outer = []
     for (let index = 0; index <= SURFACE_STEPS; index += 1) {
@@ -341,9 +353,9 @@ function createSectionGuides() {
       const line = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(points),
         new THREE.LineDashedMaterial({
-          color: colors[groupIndex] || colors[0],
+          color: active ? '#f0c86d' : colors[groupIndex] || colors[0],
           transparent: true,
-          opacity: groupIndex === 1 ? .6 : .38,
+          opacity: active ? .82 : .28,
           dashSize: .18,
           gapSize: .11,
           depthWrite: false
@@ -357,6 +369,43 @@ function createSectionGuides() {
   rootGroup.add(sectionGuideGroup)
 }
 
+function createFieldLayerGeometry(radialRatio) {
+  const vertexCount = X_STEPS * (SURFACE_STEPS + 1)
+  const positions = new Float32Array(vertexCount * 3)
+  const colors = new Float32Array(vertexCount * 3)
+  const indices = []
+  let cursor = 0
+  for (let xi = 0; xi < X_STEPS; xi += 1) {
+    const x = THREE.MathUtils.lerp(LONGITUDINAL_MIN, LONGITUDINAL_MAX, xi / (X_STEPS - 1))
+    for (let si = 0; si <= SURFACE_STEPS; si += 1) {
+      const surfaceRatio = si / SURFACE_STEPS
+      const base = archPoint(surfaceRatio)
+      const normal = archNormal(surfaceRatio)
+      positions[cursor] = x
+      positions[cursor + 1] = base.y + normal.y * FIELD_DEPTH_M * radialRatio
+      positions[cursor + 2] = base.z + normal.z * FIELD_DEPTH_M * radialRatio
+      colorAt(fieldAt(x, surfaceRatio, radialRatio), scratchColor)
+      colors[cursor] = scratchColor.r
+      colors[cursor + 1] = scratchColor.g
+      colors[cursor + 2] = scratchColor.b
+      cursor += 3
+    }
+  }
+  for (let xi = 0; xi < X_STEPS - 1; xi += 1) {
+    for (let si = 0; si < SURFACE_STEPS; si += 1) {
+      const current = xi * (SURFACE_STEPS + 1) + si
+      const next = current + SURFACE_STEPS + 1
+      indices.push(current, next, current + 1, current + 1, next, next + 1)
+    }
+  }
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
+  geometry.setIndex(indices)
+  geometry.computeBoundingSphere()
+  return geometry
+}
+
 function createField() {
   if (fieldPoints) {
     rootGroup.remove(fieldPoints)
@@ -367,6 +416,10 @@ function createField() {
     rootGroup.remove(fieldSurface)
     fieldSurface.geometry.dispose()
     fieldSurface.material.dispose()
+  }
+  if (fieldLayerGroup) {
+    rootGroup.remove(fieldLayerGroup)
+    disposeObject(fieldLayerGroup)
   }
 
   const pointCount = X_STEPS * (SURFACE_STEPS + 1) * RADIAL_STEPS
@@ -408,6 +461,23 @@ function createField() {
   fieldPoints.name = '分层绘制三维反演场'
   fieldPoints.renderOrder = 3
   rootGroup.add(fieldPoints)
+
+  fieldLayerGroup = new THREE.Group()
+  fieldLayerGroup.name = '六层三维围岩空间等值壳'
+  fieldLayerMaterial = new THREE.MeshBasicMaterial({
+    transparent: true,
+    opacity: .13,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+    vertexColors: true
+  })
+  ;[.14, .3, .46, .62, .79, .98].forEach((radialRatio, index) => {
+    const layer = new THREE.Mesh(createFieldLayerGeometry(radialRatio), fieldLayerMaterial)
+    layer.name = `三维场层-${index + 1}`
+    layer.renderOrder = 3 + index * .01
+    fieldLayerGroup.add(layer)
+  })
+  rootGroup.add(fieldLayerGroup)
 
   const surfaceVertexCount = X_STEPS * (SURFACE_STEPS + 1)
   const surfacePositions = new Float32Array(surfaceVertexCount * 3)
@@ -483,7 +553,9 @@ function setInstancePosition(target, position, index, scale = 1) {
 
 function isSelectedBorehole(borehole, index) {
   const selectedNumber = Number(props.selectedBoreholeId.match(/(\d+)$/)?.[1] || 1) - 1
-  return borehole?.id === props.selectedBoreholeId || index === selectedNumber
+  const boreholeGroupId = borehole?.id?.split('-')?.[0]
+  const groupMatches = !boreholeGroupId || boreholeGroupId === props.selectedGroupId
+  return groupMatches && (borehole?.id === props.selectedBoreholeId || index === selectedNumber)
 }
 
 function createBoreholes() {
@@ -612,17 +684,22 @@ function updateProgress() {
 }
 
 function updateViewMode() {
-  if (!fieldPoints || !fieldSurface || !rockMass) return
-  const pointOpacity = props.viewMode === 'section' ? .12 : props.viewMode === 'iso' ? .72 : .56
-  const surfaceOpacity = props.viewMode === 'section' ? .82 : props.viewMode === 'iso' ? .28 : .58
-  fieldPointMaterial.opacity = pointOpacity
-  fieldPointMaterial.size = props.viewMode === 'iso' ? .105 : props.compact ? .082 : .095
-  fieldSurfaceMaterial.opacity = surfaceOpacity
-  fieldSurface.visible = props.viewMode !== 'iso'
-  rockMass.material[0].opacity = props.viewMode === 'section' ? .13 : .22
-  rockMass.material[1].opacity = props.viewMode === 'section' ? .075 : .13
-  cavitySurface.material.opacity = props.viewMode === 'section' ? .16 : .31
-  roadwayFloor.material.opacity = props.viewMode === 'section' ? .14 : .28
+  if (!fieldPoints || !fieldSurface || !fieldLayerGroup || !rockMass) return
+  const cloudMode = props.viewMode === 'cloud'
+  const sectionMode = props.viewMode === 'section'
+  fieldPoints.visible = cloudMode || props.viewMode === 'iso'
+  fieldPointMaterial.opacity = props.viewMode === 'iso' ? .78 : .32
+  fieldPointMaterial.size = props.viewMode === 'iso' ? .105 : props.compact ? .072 : .082
+  fieldLayerGroup.visible = cloudMode
+  fieldLayerMaterial.opacity = props.compact ? .115 : .13
+  fieldSurface.visible = sectionMode
+  fieldSurfaceMaterial.opacity = .86
+  rockMass.material[0].opacity = cloudMode ? .38 : sectionMode ? .12 : .18
+  rockMass.material[1].opacity = cloudMode ? .22 : sectionMode ? .065 : .09
+  rockEdges.material.opacity = cloudMode ? .42 : sectionMode ? .16 : .24
+  cavitySurface.material.opacity = cloudMode ? .4 : sectionMode ? .16 : .24
+  roadwayFloor.material.opacity = cloudMode ? .36 : sectionMode ? .14 : .2
+  rootGroup.rotation.set(cloudMode ? -.12 : -.035, cloudMode ? -.035 : 0, cloudMode ? .018 : 0)
   requestRender()
 }
 
@@ -753,6 +830,12 @@ watch(() => props.selectedBoreholeId, () => {
   updateBoreholeColors()
   updateBoreholeHeads()
 })
+watch(() => props.selectedGroupId, () => {
+  if (!rootGroup) return
+  createSectionGuides()
+  updateBoreholeColors()
+  updateBoreholeHeads()
+})
 
 onMounted(init)
 onBeforeUnmount(() => {
@@ -787,6 +870,14 @@ onBeforeUnmount(() => {
 .section-key i { grid-row: 1 / 3; width: 3px; background: #69ccde; }
 .section-key strong { color: #cadadd; font-size: 7px; font-weight: 500; }
 .section-key small { color: #607a85; font-size: 6px; }
+.section-key > span.active { border-color: rgba(230, 193, 104, .55); background: rgba(70, 55, 25, .48); }
+.section-key > span.active i { background: #e5bd61; box-shadow: 0 0 7px rgba(229, 189, 97, .5); }
+.section-key > span.active strong { color: #f1db9d; }
+.mode-readout { position: absolute; z-index: 4; left: 16px; bottom: 38px; display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; pointer-events: none; background: rgba(5, 16, 23, .76); border-left: 2px solid #71c9d8; }
+.mode-readout strong { color: #d9e7e9; font-size: 8px; font-weight: 500; }
+.mode-readout span { color: #637d86; font-size: 6px; }
+.volume-cloud-canvas.section .mode-readout { border-left-color: #e5bd61; }
+.volume-cloud-canvas.section .mode-readout strong { color: #f0d89a; }
 .depth-readout { position: absolute; z-index: 4; right: 16px; bottom: 15px; min-width: 105px; padding: 6px 8px; text-align: right; pointer-events: none; }
 .depth-readout span { display: block; font-size: 6px; }
 .depth-readout strong { display: block; margin-top: 2px; color: #e2ecee; font: 12px Electronic, monospace; }

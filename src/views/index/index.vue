@@ -124,6 +124,7 @@
                 :boreholes="store.boreholes"
                 :spatial-groups="store.spatialRoadway?.groups || []"
                 :selected-borehole-id="store.selectedBoreholeId"
+                :selected-group-id="selectedSectionId"
                 :max-depth="store.ringCloud?.meta.depthRangeCm?.[1] || 125"
                 @sample="cloudSample = $event"
                 @select="store.selectedBoreholeId = $event"
@@ -134,7 +135,7 @@
                 <div class="legend-scale stress-scale"></div>
                 <div class="legend-labels"><span v-for="tick in stressMetric.ticks" :key="tick">{{ tick }}</span></div>
               </div>
-              <div class="pane-readout stress-readout"><span>σ</span><strong>{{ formatValue(currentPrediction?.stress, 1) }}</strong><em>MPa</em></div>
+              <div class="pane-readout stress-readout"><span>σ</span><strong>{{ formatValue(currentSpatialSample?.stressMpa ?? currentPrediction?.stress, 1) }}</strong><em>MPa</em></div>
             </article>
             <article class="cloud-pane damage-cloud-pane">
               <RockCloud3D
@@ -150,6 +151,7 @@
                 :boreholes="store.boreholes"
                 :spatial-groups="store.spatialRoadway?.groups || []"
                 :selected-borehole-id="store.selectedBoreholeId"
+                :selected-group-id="selectedSectionId"
                 :max-depth="store.ringCloud?.meta.depthRangeCm?.[1] || 125"
                 @select="store.selectedBoreholeId = $event"
                 @slice-select="selectAnalysisSlice"
@@ -159,18 +161,18 @@
                 <div class="legend-scale damage-scale"></div>
                 <div class="legend-labels"><span v-for="tick in damageMetric.ticks" :key="tick">{{ tick }}</span></div>
               </div>
-              <div class="pane-readout damage-readout"><span>D</span><strong>{{ formatValue(currentPrediction?.damage, 0) }}</strong><em>%</em></div>
+              <div class="pane-readout damage-readout"><span>D</span><strong>{{ formatValue(currentSpatialSample?.damagePct ?? currentPrediction?.damage, 0) }}</strong><em>%</em></div>
             </article>
           </div>
           <div class="scene-data-strip">
-            <div><span>分析切面</span><strong>{{ analysisDepth.toFixed(1) }} cm · {{ selectedBorehole?.id || '--' }}</strong></div>
-            <div><span>反演损伤</span><strong>{{ formatValue(currentPrediction?.damage, 0) }}%</strong></div>
-            <div><span>实测 / 反演应力</span><strong>{{ formatValue(currentSample?.actualStress, 0) }} / {{ formatValue(currentPrediction?.stress, 0) }} MPa</strong></div>
-            <div><span>反演状态</span><strong>{{ currentPrediction?.state || '--' }}</strong></div>
+            <div><span>当前断面 / 钻孔</span><strong>{{ selectedSectionId }}组 X={{ formatSigned(selectedSpatialGroup?.longitudinalM) }}m · {{ selectedSpatialBorehole?.id || '--' }}</strong></div>
+            <div><span>径向分析深度</span><strong>{{ analysisDepth.toFixed(1) }} cm</strong></div>
+            <div><span>实测 / 反演应力</span><strong>{{ formatValue(currentSpatialSample?.trueStressMpa, 0) }} / {{ formatValue(currentSpatialSample?.stressMpa, 0) }} MPa</strong></div>
+            <div><span>反演损伤 / 置信度</span><strong>{{ formatValue(currentSpatialSample?.damagePct, 0) }}% / {{ formatValue((currentSpatialSample?.confidence || 0) * 100, 1) }}%</strong></div>
           </div>
         </div>
         <div class="scene-controls">
-          <div class="control-row">
+          <div class="control-row primary">
             <div class="view-switch">
               <button v-for="view in views" :key="view.key" :class="{ active: viewMode === view.key }" @click="viewMode = view.key">
                 <span>{{ view.icon }}</span>{{ view.label }}
@@ -181,11 +183,26 @@
                 :class="{ active: store.selectedModel === m.id }"
                 @click="store.selectedModel = m.id">{{ m.id.toUpperCase() }}</button>
             </div>
+            <div class="section-group-select">
+              <button v-for="group in spatialGroups" :key="group.id"
+                :class="{ active: selectedSectionId === group.id }"
+                :title="`${group.label} · 巷道纵向 ${formatSigned(group.longitudinalM)} m · ${group.boreholeCount} 孔`"
+                @click="selectSectionGroup(group.id)">
+                <b>{{ group.id }}</b><span>{{ formatSigned(group.longitudinalM) }}m</span>
+              </button>
+            </div>
+          </div>
+          <div class="control-row borehole-row">
+            <div class="active-group-summary">
+              <b>{{ selectedSectionId }}组</b>
+              <span>X={{ formatSigned(selectedSpatialGroup?.longitudinalM) }}m</span>
+              <em>{{ selectedGroupBoreholes.length }}孔</em>
+            </div>
             <div class="borehole-select-inline">
-              <button v-for="hole in store.boreholes" :key="hole.id"
-                :class="{ active: store.selectedBoreholeId === hole.id, special: hole.role === 'special-variable-stress' }"
+              <button v-for="hole in selectedGroupBoreholes" :key="hole.id"
+                :class="{ active: selectedSpatialBorehole?.id === hole.id }"
                 :title="`${hole.id} · ${hole.sourceFile}`"
-                @click="store.selectedBoreholeId = hole.id">{{ hole.id.slice(-2) }}</button>
+                @click="selectSpatialBorehole(hole)">{{ hole.id.slice(-2) }}</button>
             </div>
           </div>
           <div class="control-row sub">
@@ -434,6 +451,7 @@ const slice = ref(0)
 const analysisPinned = ref(false)
 const autoRotate = ref(true)
 const viewMode = ref('cloud')
+const selectedSectionId = ref('B')
 const now = ref(new Date())
 const cloudSample = ref({ borehole: null, sample: null })
 const findingIndex = ref(0)
@@ -618,13 +636,42 @@ const views = [
 // ---- computed from store ----
 const activeModel = computed(() => store.activeModel)
 const activeModelName = computed(() => activeModel.value?.name_en || '--')
-const selectedBorehole = computed(() => store.activeBorehole)
+const spatialGroups = computed(() => (store.spatialRoadway?.groups || []).slice().sort((a, b) => a.longitudinalM - b.longitudinalM))
+const selectedSpatialGroup = computed(() => spatialGroups.value.find(group => group.id === selectedSectionId.value) || spatialGroups.value[0] || null)
+const selectedGroupBoreholes = computed(() => selectedSpatialGroup.value?.boreholes || [])
+const selectedHoleNumber = computed(() => Number(store.selectedBoreholeId?.match(/(\d+)$/)?.[1] || 1))
+const selectedSpatialBorehole = computed(() => (
+  selectedGroupBoreholes.value.find(hole => Number(hole.id.match(/(\d+)$/)?.[1]) === selectedHoleNumber.value)
+  || selectedGroupBoreholes.value[0]
+  || null
+))
+const currentSpatialSample = computed(() => {
+  const samples = selectedSpatialBorehole.value?.samples || []
+  if (!samples.length) return null
+  const index = Math.min(Math.round((slice.value / 100) * (samples.length - 1)), samples.length - 1)
+  return samples[index]
+})
 const reliefInfo = computed(() => store.ringCloud?.meta?.reliefModel || { available: false })
 const telemetrySampleCount = computed(() => Number(store.ringCloud?.meta?.rawRows || 0))
 
 function formatValue(value, digits = 1) {
   const number = Number(value)
   return Number.isFinite(number) ? number.toFixed(digits) : '--'
+}
+
+function formatSigned(value) {
+  const number = Number(value)
+  if (!Number.isFinite(number)) return '--'
+  return number > 0 ? `+${number.toFixed(0)}` : number.toFixed(0)
+}
+
+function selectSectionGroup(groupId) {
+  selectedSectionId.value = groupId
+}
+
+function selectSpatialBorehole(hole) {
+  const number = Number(hole?.id?.match(/(\d+)$/)?.[1] || 1)
+  store.selectedBoreholeId = `BH-${String(number).padStart(2, '0')}`
 }
 
 // cloudProgress: evolutionProgress directly drives the 3D scene drilling face
@@ -929,6 +976,17 @@ onBeforeUnmount(() => {
 .model-select-inline { display: flex; gap: 2px; border-left: 1px solid rgba(65, 164, 205, .15); padding-left: 8px; }
 .model-select-inline button { height: 25px; padding: 0 6px; color: #557f94; font: 8px Electronic, monospace; border: 1px solid rgba(70, 156, 192, .12); background: rgba(20, 58, 81, .2); cursor: pointer; }
 .model-select-inline button.active { color: #42d9ff; border-color: #38d8ff; background: rgba(26, 142, 182, .22); }
+.section-group-select { display: flex; flex: 1; justify-content: flex-end; gap: 3px; min-width: 0; padding-left: 8px; border-left: 1px solid rgba(65, 164, 205, .15); }
+.section-group-select button { display: grid; grid-template-columns: auto auto; align-items: center; gap: 6px; min-width: 66px; height: 27px; padding: 0 8px; color: #627f89; font-family: inherit; background: rgba(20, 58, 81, .2); border: 1px solid rgba(70, 156, 192, .12); cursor: pointer; }
+.section-group-select b { color: #9bb1b7; font: 10px Electronic, monospace; }
+.section-group-select span { font-size: 7px; }
+.section-group-select button.active { color: #edcf83; border-color: rgba(227, 184, 90, .58); background: rgba(227, 184, 90, .09); box-shadow: inset 0 -1px #e3b85a; }
+.section-group-select button.active b { color: #f2da9b; }
+.borehole-row { border-top: 1px solid rgba(65, 164, 205, .1); }
+.active-group-summary { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; min-width: 114px; height: 25px; padding: 0 8px; color: #687f88; background: rgba(83, 117, 127, .055); border-left: 2px solid #e3b85a; }
+.active-group-summary b { color: #edcf83; font: 9px Electronic, monospace; }
+.active-group-summary span, .active-group-summary em { font-size: 7px; font-style: normal; }
+.active-group-summary em { color: #87a0a9; }
 .borehole-select-inline { display: flex; flex: 1; gap: 2px; min-width: 0; padding-left: 8px; border-left: 1px solid rgba(65, 164, 205, .15); overflow: hidden; }
 .borehole-select-inline button { flex: 1 1 0; min-width: 22px; height: 25px; padding: 0 2px; color: #557f94; font: 7px Electronic, monospace; border: 1px solid rgba(70, 156, 192, .12); background: rgba(20, 58, 81, .2); cursor: pointer; }
 .borehole-select-inline button:hover, .borehole-select-inline button.active { color: #dff9ff; border-color: #38d8ff; background: rgba(26, 142, 182, .22); }
