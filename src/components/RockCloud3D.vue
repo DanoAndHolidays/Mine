@@ -6,6 +6,7 @@
     @pointerenter="hovered = true"
     @pointerleave="hovered = false"
   >
+    <canvas ref="canvasElement" class="canvas-host"></canvas>
     <div class="field-header">
       <span class="field-symbol">{{ metricMeta.symbol }}</span>
       <div><strong>{{ metricMeta.title }}</strong><small>{{ metricMeta.subtitle }}</small></div>
@@ -66,16 +67,27 @@ const props = defineProps({
 
 const emit = defineEmits(['sample', 'select', 'slice-select'])
 const container = ref(null)
+const canvasElement = ref(null)
 const hovered = ref(false)
 const webglReady = ref(true)
 const webglError = ref('')
 const selectedDepth = computed(() => props.maxDepth * THREE.MathUtils.clamp(props.slice / 100, 0, 1))
 const sectionGroups = computed(() => props.spatialGroups.slice().sort((a, b) => a.longitudinalM - b.longitudinalM))
+const selectedSectionGroup = computed(() => (
+  sectionGroups.value.find(group => group.id === props.selectedGroupId)
+  || sectionGroups.value[Math.floor(sectionGroups.value.length / 2)]
+  || null
+))
 const totalBoreholes = computed(() => sectionGroups.value.reduce((total, group) => total + (group.boreholes?.length || 0), 0))
 const viewModeMeta = computed(() => {
-  if (props.viewMode === 'section') return { title: '单切面解析', detail: `${selectedDepth.value.toFixed(1)} cm 径向等值面` }
+  if (props.viewMode === 'section') {
+    return {
+      title: `${selectedSectionGroup.value?.id || '--'}组横断面解析`,
+      detail: `实测断面 X=${selectedSectionGroup.value?.longitudinalM ?? '--'} m · 0-${selectedDepth.value.toFixed(1)} cm`
+    }
+  }
   if (props.viewMode === 'iso') return { title: '离散场点', detail: '空间采样点直接分布' }
-  return { title: '完整三维围岩', detail: '多层体场 + 半透明岩体' }
+  return { title: '完整三维围岩', detail: '连续体场 + 半透明围岩' }
 })
 const metricMeta = computed(() => {
   if (props.metric === 'damage') return { symbol: 'D(X,S,r)', title: '三维损伤反演场', subtitle: 'ARCHED ROADWAY · SPATIAL FIELD' }
@@ -369,35 +381,77 @@ function createSectionGuides() {
   rootGroup.add(sectionGuideGroup)
 }
 
-function createFieldLayerGeometry(radialRatio) {
-  const vertexCount = X_STEPS * (SURFACE_STEPS + 1)
+function createConnectedFieldGeometry(radialLevels) {
+  const surfaceVertexCount = SURFACE_STEPS + 1
+  const layerVertexCount = X_STEPS * surfaceVertexCount
+  const vertexCount = radialLevels.length * layerVertexCount
   const positions = new Float32Array(vertexCount * 3)
   const colors = new Float32Array(vertexCount * 3)
   const indices = []
   let cursor = 0
-  for (let xi = 0; xi < X_STEPS; xi += 1) {
-    const x = THREE.MathUtils.lerp(LONGITUDINAL_MIN, LONGITUDINAL_MAX, xi / (X_STEPS - 1))
-    for (let si = 0; si <= SURFACE_STEPS; si += 1) {
-      const surfaceRatio = si / SURFACE_STEPS
-      const base = archPoint(surfaceRatio)
-      const normal = archNormal(surfaceRatio)
-      positions[cursor] = x
-      positions[cursor + 1] = base.y + normal.y * FIELD_DEPTH_M * radialRatio
-      positions[cursor + 2] = base.z + normal.z * FIELD_DEPTH_M * radialRatio
-      colorAt(fieldAt(x, surfaceRatio, radialRatio), scratchColor)
-      colors[cursor] = scratchColor.r
-      colors[cursor + 1] = scratchColor.g
-      colors[cursor + 2] = scratchColor.b
-      cursor += 3
+  const vertexIndex = (ri, xi, si) => ri * layerVertexCount + xi * surfaceVertexCount + si
+
+  radialLevels.forEach((radialRatio) => {
+    for (let xi = 0; xi < X_STEPS; xi += 1) {
+      const x = THREE.MathUtils.lerp(LONGITUDINAL_MIN, LONGITUDINAL_MAX, xi / (X_STEPS - 1))
+      for (let si = 0; si <= SURFACE_STEPS; si += 1) {
+        const surfaceRatio = si / SURFACE_STEPS
+        const base = archPoint(surfaceRatio)
+        const normal = archNormal(surfaceRatio)
+        positions[cursor] = x
+        positions[cursor + 1] = base.y + normal.y * FIELD_DEPTH_M * radialRatio
+        positions[cursor + 2] = base.z + normal.z * FIELD_DEPTH_M * radialRatio
+        colorAt(fieldAt(x, surfaceRatio, radialRatio), scratchColor)
+        colors[cursor] = scratchColor.r
+        colors[cursor + 1] = scratchColor.g
+        colors[cursor + 2] = scratchColor.b
+        cursor += 3
+      }
     }
-  }
-  for (let xi = 0; xi < X_STEPS - 1; xi += 1) {
-    for (let si = 0; si < SURFACE_STEPS; si += 1) {
-      const current = xi * (SURFACE_STEPS + 1) + si
-      const next = current + SURFACE_STEPS + 1
-      indices.push(current, next, current + 1, current + 1, next, next + 1)
+  })
+
+  // Continuous longitudinal shells carry the interpolated field through the roadway.
+  radialLevels.forEach((_, ri) => {
+    for (let xi = 0; xi < X_STEPS - 1; xi += 1) {
+      for (let si = 0; si < SURFACE_STEPS; si += 1) {
+        const current = vertexIndex(ri, xi, si)
+        const next = vertexIndex(ri, xi + 1, si)
+        indices.push(current, next, current + 1, current + 1, next, next + 1)
+      }
     }
-  }
+  })
+
+  // Radial webs at the ends and measured A/B/C sections join every shell into one body.
+  const connectorSlices = new Set([0, X_STEPS - 1])
+  sectionGroups.value.forEach((group) => {
+    const ratio = (group.longitudinalM - LONGITUDINAL_MIN) / ROADWAY_LENGTH
+    connectorSlices.add(Math.round(THREE.MathUtils.clamp(ratio, 0, 1) * (X_STEPS - 1)))
+  })
+  connectorSlices.forEach((xi) => {
+    for (let ri = 0; ri < radialLevels.length - 1; ri += 1) {
+      for (let si = 0; si < SURFACE_STEPS; si += 1) {
+        const inner = vertexIndex(ri, xi, si)
+        const outer = vertexIndex(ri + 1, xi, si)
+        const innerNext = vertexIndex(ri, xi, si + 1)
+        const outerNext = vertexIndex(ri + 1, xi, si + 1)
+        indices.push(inner, outer, innerNext, innerNext, outer, outerNext)
+      }
+    }
+  })
+
+  // Close both arch feet so the volume reads as a single connected rock body.
+  ;[0, SURFACE_STEPS].forEach((si) => {
+    for (let ri = 0; ri < radialLevels.length - 1; ri += 1) {
+      for (let xi = 0; xi < X_STEPS - 1; xi += 1) {
+        const inner = vertexIndex(ri, xi, si)
+        const outer = vertexIndex(ri + 1, xi, si)
+        const innerNext = vertexIndex(ri, xi + 1, si)
+        const outerNext = vertexIndex(ri + 1, xi + 1, si)
+        indices.push(inner, innerNext, outer, outer, innerNext, outerNext)
+      }
+    }
+  })
+
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
@@ -463,68 +517,59 @@ function createField() {
   rootGroup.add(fieldPoints)
 
   fieldLayerGroup = new THREE.Group()
-  fieldLayerGroup.name = '六层三维围岩空间等值壳'
+  fieldLayerGroup.name = '连续三维围岩空间体场'
   fieldLayerMaterial = new THREE.MeshBasicMaterial({
     transparent: true,
-    opacity: .13,
+    opacity: .34,
     depthWrite: false,
     side: THREE.DoubleSide,
     vertexColors: true
   })
-  ;[.14, .3, .46, .62, .79, .98].forEach((radialRatio, index) => {
-    const layer = new THREE.Mesh(createFieldLayerGeometry(radialRatio), fieldLayerMaterial)
-    layer.name = `三维场层-${index + 1}`
-    layer.renderOrder = 3 + index * .01
-    fieldLayerGroup.add(layer)
-  })
+  const connectedVolume = new THREE.Mesh(
+    createConnectedFieldGeometry([.04, .18, .34, .5, .66, .82, 1]),
+    fieldLayerMaterial
+  )
+  connectedVolume.name = '径向连续连接体'
+  connectedVolume.renderOrder = 3
+  fieldLayerGroup.add(connectedVolume)
   rootGroup.add(fieldLayerGroup)
 
-  const surfaceVertexCount = X_STEPS * (SURFACE_STEPS + 1)
+  const surfaceVertexCount = (RADIAL_STEPS + 1) * (SURFACE_STEPS + 1)
   const surfacePositions = new Float32Array(surfaceVertexCount * 3)
-  const surfaceOutward = new Float32Array(surfaceVertexCount * 3)
   const surfaceColors = new Float32Array(surfaceVertexCount * 3)
   const surfaceIndices = []
-  let surfaceCursor = 0
-  for (let xi = 0; xi < X_STEPS; xi += 1) {
-    const x = THREE.MathUtils.lerp(LONGITUDINAL_MIN, LONGITUDINAL_MAX, xi / (X_STEPS - 1))
+  for (let ri = 0; ri <= RADIAL_STEPS; ri += 1) {
     for (let si = 0; si <= SURFACE_STEPS; si += 1) {
-      const ratio = si / SURFACE_STEPS
-      const base = archPoint(ratio)
-      const normal = archNormal(ratio)
-      surfacePositions[surfaceCursor] = x
-      surfacePositions[surfaceCursor + 1] = base.y
-      surfacePositions[surfaceCursor + 2] = base.z
-      surfaceOutward[surfaceCursor] = normal.x
-      surfaceOutward[surfaceCursor + 1] = normal.y
-      surfaceOutward[surfaceCursor + 2] = normal.z
-      surfaceCursor += 3
+      const vertexIndex = ri * (SURFACE_STEPS + 1) + si
+      const cursor = vertexIndex * 3
+      const base = archPoint(si / SURFACE_STEPS)
+      surfacePositions[cursor] = selectedSectionGroup.value?.longitudinalM || 0
+      surfacePositions[cursor + 1] = base.y
+      surfacePositions[cursor + 2] = base.z
     }
   }
-  for (let xi = 0; xi < X_STEPS - 1; xi += 1) {
+  for (let ri = 0; ri < RADIAL_STEPS; ri += 1) {
     for (let si = 0; si < SURFACE_STEPS; si += 1) {
-      const current = xi * (SURFACE_STEPS + 1) + si
+      const current = ri * (SURFACE_STEPS + 1) + si
       const next = current + SURFACE_STEPS + 1
       surfaceIndices.push(current, next, current + 1, current + 1, next, next + 1)
     }
   }
   const surfaceGeometry = new THREE.BufferGeometry()
   surfaceGeometry.setAttribute('position', new THREE.BufferAttribute(surfacePositions, 3))
-  surfaceGeometry.setAttribute('outward', new THREE.BufferAttribute(surfaceOutward, 3))
   surfaceGeometry.setAttribute('color', new THREE.BufferAttribute(surfaceColors, 3))
   surfaceGeometry.setIndex(surfaceIndices)
   surfaceGeometry.computeBoundingSphere()
   fieldSurfaceMaterial = new THREE.MeshBasicMaterial({
     transparent: true,
-    opacity: .56,
+    opacity: .92,
     depthWrite: false,
     side: THREE.DoubleSide,
     vertexColors: true
   })
   fieldSurface = new THREE.Mesh(surfaceGeometry, fieldSurfaceMaterial)
-  fieldSurface.userData.basePositions = surfacePositions.slice()
-  fieldSurface.userData.outward = surfaceOutward
   fieldSurface.frustumCulled = false
-  fieldSurface.name = '当前径向分析等值面'
+  fieldSurface.name = '当前分组实测横断面'
   fieldSurface.renderOrder = 6
   rootGroup.add(fieldSurface)
 
@@ -635,7 +680,7 @@ function updateBoreholeHeads() {
   })
   boreholeHeads.instanceMatrix.needsUpdate = true
 
-  const center = sectionGroups.value[Math.floor(sectionGroups.value.length / 2)]
+  const center = selectedSectionGroup.value
   const selectedIndex = Math.max(0, Number(props.selectedBoreholeId.match(/(\d+)$/)?.[1] || 1) - 1)
   const borehole = center?.boreholes?.[selectedIndex]
   const sample = sampleAtDepth(borehole, radialRatio)
@@ -645,32 +690,29 @@ function updateBoreholeHeads() {
 function updateAnalysisSlice(force = false) {
   if (!fieldSurfaceMaterial || !fieldSurface) return
   const ratio = THREE.MathUtils.clamp(props.slice / 100, 0, 1)
+  const group = selectedSectionGroup.value
+  if (!group) return
   const positionAttribute = fieldSurface.geometry.getAttribute('position')
-  const basePositions = fieldSurface.userData.basePositions
-  const outward = fieldSurface.userData.outward
-  const distance = FIELD_DEPTH_M * ratio
-  for (let index = 0; index < positionAttribute.array.length; index += 3) {
-    positionAttribute.array[index] = basePositions[index] + outward[index] * distance
-    positionAttribute.array[index + 1] = basePositions[index + 1] + outward[index + 1] * distance
-    positionAttribute.array[index + 2] = basePositions[index + 2] + outward[index + 2] * distance
+  const colorAttribute = fieldSurface.geometry.getAttribute('color')
+  let vertexIndex = 0
+  for (let ri = 0; ri <= RADIAL_STEPS; ri += 1) {
+    const sampledRatio = ratio * ri / RADIAL_STEPS
+    for (let si = 0; si <= SURFACE_STEPS; si += 1) {
+      const surfaceRatio = si / SURFACE_STEPS
+      const base = archPoint(surfaceRatio)
+      const normal = archNormal(surfaceRatio)
+      const cursor = vertexIndex * 3
+      positionAttribute.array[cursor] = group.longitudinalM
+      positionAttribute.array[cursor + 1] = base.y + normal.y * FIELD_DEPTH_M * sampledRatio
+      positionAttribute.array[cursor + 2] = base.z + normal.z * FIELD_DEPTH_M * sampledRatio
+      colorAt(sampleValue(group, surfaceRatio, sampledRatio), scratchColor)
+      colorAttribute.setXYZ(vertexIndex, scratchColor.r, scratchColor.g, scratchColor.b)
+      vertexIndex += 1
+    }
   }
   positionAttribute.needsUpdate = true
-  const band = Math.round(ratio * RADIAL_STEPS)
-  if (force || band !== lastSurfaceBand) {
-    lastSurfaceBand = band
-    const sampledRatio = band / RADIAL_STEPS
-    const colorAttribute = fieldSurface.geometry.getAttribute('color')
-    let vertexIndex = 0
-    for (let xi = 0; xi < X_STEPS; xi += 1) {
-      const x = THREE.MathUtils.lerp(LONGITUDINAL_MIN, LONGITUDINAL_MAX, xi / (X_STEPS - 1))
-      for (let si = 0; si <= SURFACE_STEPS; si += 1) {
-        colorAt(fieldAt(x, si / SURFACE_STEPS, sampledRatio), scratchColor)
-        colorAttribute.setXYZ(vertexIndex, scratchColor.r, scratchColor.g, scratchColor.b)
-        vertexIndex += 1
-      }
-    }
-    colorAttribute.needsUpdate = true
-  }
+  colorAttribute.needsUpdate = true
+  fieldSurface.geometry.computeBoundingSphere()
   updateBoreholeHeads()
   requestRender()
 }
@@ -688,18 +730,18 @@ function updateViewMode() {
   const cloudMode = props.viewMode === 'cloud'
   const sectionMode = props.viewMode === 'section'
   fieldPoints.visible = cloudMode || props.viewMode === 'iso'
-  fieldPointMaterial.opacity = props.viewMode === 'iso' ? .78 : .32
-  fieldPointMaterial.size = props.viewMode === 'iso' ? .105 : props.compact ? .072 : .082
+  fieldPointMaterial.opacity = props.viewMode === 'iso' ? .78 : .16
+  fieldPointMaterial.size = props.viewMode === 'iso' ? .105 : props.compact ? .058 : .066
   fieldLayerGroup.visible = cloudMode
-  fieldLayerMaterial.opacity = props.compact ? .115 : .13
+  fieldLayerMaterial.opacity = props.compact ? .29 : .34
   fieldSurface.visible = sectionMode
-  fieldSurfaceMaterial.opacity = .86
-  rockMass.material[0].opacity = cloudMode ? .38 : sectionMode ? .12 : .18
-  rockMass.material[1].opacity = cloudMode ? .22 : sectionMode ? .065 : .09
-  rockEdges.material.opacity = cloudMode ? .42 : sectionMode ? .16 : .24
-  cavitySurface.material.opacity = cloudMode ? .4 : sectionMode ? .16 : .24
-  roadwayFloor.material.opacity = cloudMode ? .36 : sectionMode ? .14 : .2
-  rootGroup.rotation.set(cloudMode ? -.12 : -.035, cloudMode ? -.035 : 0, cloudMode ? .018 : 0)
+  fieldSurfaceMaterial.opacity = .94
+  rockMass.material[0].opacity = cloudMode ? .48 : sectionMode ? .12 : .18
+  rockMass.material[1].opacity = cloudMode ? .31 : sectionMode ? .065 : .09
+  rockEdges.material.opacity = cloudMode ? .58 : sectionMode ? .16 : .24
+  cavitySurface.material.opacity = cloudMode ? .52 : sectionMode ? .16 : .24
+  roadwayFloor.material.opacity = cloudMode ? .46 : sectionMode ? .14 : .2
+  rootGroup.rotation.set(0, 0, 0)
   requestRender()
 }
 
@@ -724,14 +766,15 @@ function disposeObject(object) {
 }
 
 function init() {
-  if (!container.value) return
+  if (!container.value || !canvasElement.value) return
   try {
     scene = new THREE.Scene()
     scene.fog = new THREE.FogExp2('#06111a', .018)
     camera = new THREE.PerspectiveCamera(34, container.value.clientWidth / container.value.clientHeight, .1, 120)
-    camera.position.set(17.8, 9.4, 19.6)
+    camera.position.set(17.8, 3.7, 19.6)
 
     renderer = new THREE.WebGLRenderer({
+      canvas: canvasElement.value,
       antialias: !props.compact,
       alpha: true,
       powerPreference: 'high-performance',
@@ -743,7 +786,6 @@ function init() {
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.08
-    container.value.prepend(renderer.domElement)
     container.value.dataset.maxFps = String(MAX_RENDER_FPS)
 
     controls = new OrbitControls(camera, renderer.domElement)
@@ -773,7 +815,6 @@ function init() {
     scene.add(fill)
 
     rootGroup = new THREE.Group()
-    rootGroup.rotation.x = -.025
     scene.add(rootGroup)
     createRockMass()
     createRoadwayCavity()
@@ -834,7 +875,7 @@ watch(() => props.selectedGroupId, () => {
   if (!rootGroup) return
   createSectionGuides()
   updateBoreholeColors()
-  updateBoreholeHeads()
+  updateAnalysisSlice(true)
 })
 
 onMounted(init)
@@ -845,14 +886,13 @@ onBeforeUnmount(() => {
   controls?.dispose()
   if (scene) disposeObject(scene)
   renderer?.dispose()
-  renderer?.domElement?.remove()
 })
 </script>
 
 <style scoped>
 .volume-cloud-canvas { position: absolute; inset: 0; overflow: hidden; }
 .volume-cloud-canvas::after { position: absolute; inset: 0; z-index: 1; content: ''; pointer-events: none; background: radial-gradient(circle at 52% 45%, transparent 46%, rgba(3, 10, 17, .46) 100%); }
-.volume-cloud-canvas :deep(canvas) { display: block; width: 100%; height: 100%; outline: none; }
+.canvas-host { position: absolute; inset: 0; display: block; width: 100%; height: 100%; outline: none; }
 .field-header { position: absolute; z-index: 4; top: 14px; left: 14px; display: flex; align-items: center; gap: 9px; pointer-events: none; }
 .field-symbol { display: grid; place-items: center; min-width: 76px; height: 34px; color: #e1edf0; font: italic 11px Georgia, serif; background: rgba(7, 18, 26, .78); border: 1px solid rgba(132, 164, 175, .3); }
 .field-header strong, .field-header small { display: block; }
