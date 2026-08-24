@@ -121,7 +121,7 @@ onMounted(() => {
           <header class="section-heading">
             <div>
               <span>NUMERICAL MODEL / 800 M DEPTH</span>
-              <strong>{{ reliefStarted ? '卸压前后数值演示对比' : '800米埋深巷道卸压前垂直应力数值演示模型' }}</strong>
+              <strong>{{ reliefStarted ? '卸压前后数值演示对比' : '800米埋深巷道卸压前 Von-Mises 应力数值演示模型' }}</strong>
             </div>
             <div v-if="decisionReady" class="plan-switch" role="group" aria-label="卸压孔方案">
               <button type="button" :class="{ active: planVariant === 'straight' }" @click="planVariant = 'straight'">水平变径孔</button>

@@ -1,0 +1,106 @@
+{
+  "encoding": "meshbin-v1",
+  "field": {
+    "name": "von Mises stress",
+    "symbol": "σᵥ",
+    "unit": "MPa",
+    "range": [
+      1.4072248295626715,
+      21.662681330217893
+    ]
+  },
+  "colormap": [
+    "#081d58",
+    "#0033cc",
+    "#006dff",
+    "#00b8ff",
+    "#00e5a8",
+    "#7dff00",
+    "#fff200",
+    "#fff7d6",
+    "#ff6a00",
+    "#b00020"
+  ],
+  "bounds": [
+    [
+      0.0,
+      -4.8,
+      0.0
+    ],
+    [
+      30.0,
+      4.8,
+      28.9
+    ]
+  ],
+  "layers": {
+    "outerShell": {
+      "url": "pyvista/outer-shell.meshbin",
+      "opacity": 0.58,
+      "vertexCount": 84398,
+      "quadCount": 84396,
+      "triangleCount": 168792,
+      "sizeBytes": 3375880
+    },
+    "sliceX": {
+      "url": "pyvista/slice-0.meshbin",
+      "gridUrl": "pyvista/slice-0-grid.linesbin",
+      "axis": 0,
+      "plane": 15.0,
+      "opacity": 0.96,
+      "vertexCount": 11058,
+      "quadCount": 10848,
+      "triangleCount": 21696,
+      "sizeBytes": 525724,
+      "segmentCount": 21905
+    },
+    "sliceY": {
+      "url": "pyvista/slice-1.meshbin",
+      "gridUrl": "pyvista/slice-1-grid.linesbin",
+      "axis": 1,
+      "plane": 0.0,
+      "opacity": 0.96,
+      "vertexCount": 16455,
+      "quadCount": 16128,
+      "triangleCount": 32256,
+      "sizeBytes": 781996,
+      "segmentCount": 32583
+    },
+    "sliceZ": {
+      "url": "pyvista/slice-2.meshbin",
+      "gridUrl": "pyvista/slice-2-grid.linesbin",
+      "axis": 2,
+      "plane": 14.45,
+      "opacity": 0.96,
+      "vertexCount": 13386,
+      "quadCount": 13056,
+      "triangleCount": 26112,
+      "sizeBytes": 634564,
+      "segmentCount": 26440
+    },
+    "tunnelWall": {
+      "url": "pyvista/tunnel-wall.meshbin",
+      "edgeUrl": "pyvista/tunnel-feature-edges.linesbin",
+      "opacity": 0.42,
+      "vertexCount": 13934,
+      "quadCount": 13932,
+      "triangleCount": 27864,
+      "sizeBytes": 93700,
+      "segmentCount": 3904
+    },
+    "highStressSolid": {
+      "url": "pyvista/high-stress-solid.meshbin",
+      "color": "#ff2222",
+      "opacity": 0.76,
+      "cellCount": 39281,
+      "stressRangeMpa": [
+        19.50062923638034,
+        27.35812692685699
+      ],
+      "vertexCount": 17722,
+      "quadCount": 17716,
+      "triangleCount": 35432,
+      "sizeBytes": 708744
+    }
+  }
+}

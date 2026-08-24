@@ -28,7 +28,7 @@
       <span>高</span>
       <i></i>
       <span>低</span>
-      <strong>σ<sub>3</sub></strong>
+      <strong>σ<sub>{{ pyvistaManifest ? 'v' : '3' }}</sub></strong>
       <small>{{ stressRangeLabel }}</small>
     </div>
 
@@ -169,11 +169,12 @@ const emit = defineEmits(['status', 'target-change'])
 const container = ref(null)
 const targetMarker = ref(null)
 const manifest = ref(null)
+const pyvistaManifest = ref(null)
 const loadState = ref('loading')
 const loadProgress = ref(0)
 const errorMessage = ref('')
 const hovered = ref(false)
-const surfaceMode = ref('roadway')
+const surfaceMode = ref('all')
 const wireframe = ref(false)
 const autoRotate = ref(false)
 const targetActive = ref(props.targetVisible ?? props.defaultTargetActive)
@@ -181,9 +182,9 @@ const renderedZoneCount = ref(0)
 const renderedPeakStress = ref(null)
 
 const surfaceOptions = [
-  { value: 'roadway', label: '巷道表面' },
-  { value: 'all', label: '巷道 + 外边界' },
-  { value: 'exterior', label: '模型外边界' }
+  { value: 'all', label: '综合三维' },
+  { value: 'roadway', label: '切面分析' },
+  { value: 'exterior', label: '围岩外壳' }
 ]
 
 const isAfter = computed(() => props.phase === 'after')
@@ -216,7 +217,7 @@ const stressRangeLabel = computed(() => {
         displayTargetInfo.value.thresholdStressMpa,
         displayTargetInfo.value.peakStressMpa
       ]
-    : manifest.value?.field?.range
+    : pyvistaManifest.value?.field?.range || manifest.value?.field?.range
   if (!Array.isArray(range) || range.length < 2) return 'MPa'
   return `${Number(range[0]).toFixed(1)}–${Number(range[1]).toFixed(1)} MPa`
 })
@@ -225,12 +226,23 @@ const targetInfo = computed(() => manifest.value?.targetIdentification || null)
 const displayTargetInfo = computed(() => {
   const info = targetInfo.value
   if (!info) return null
+  const highStressLayer = pyvistaManifest.value?.layers?.highStressSolid
+  const stressRange = highStressLayer?.stressRangeMpa
   const zoneCount = renderedZoneCount.value || info.highStressZoneCount
+  const activeZoneCount = Number(manifest.value?.model?.activeZoneCount || info.activeZoneCount)
+  const thresholdStressMpa = Array.isArray(stressRange)
+    ? Number(stressRange[0])
+    : info.thresholdStressMpa
   return {
     ...info,
+    averageStressMpa: highStressLayer
+      ? thresholdStressMpa / Number(info.thresholdMultiplier || 1.2)
+      : info.averageStressMpa,
+    thresholdStressMpa,
     peakStressMpa: renderedPeakStress.value ?? info.peakStressMpa,
     highStressZoneCount: zoneCount,
-    activeZoneRatio: zoneCount / Math.max(Number(info.activeZoneCount), 1)
+    activeZoneCount,
+    activeZoneRatio: zoneCount / Math.max(activeZoneCount, 1)
   }
 })
 const targetButtonLabel = computed(() => {
@@ -256,6 +268,10 @@ let modelBounds
 let targetPosition
 let highStressVolume
 let highStressHalo
+let boundsHelper
+let axesHelper
+const sliceGridLines = []
+const tunnelOutlineLines = []
 let reliefPlanGroup
 const roadwayMeshes = []
 const exteriorMeshes = []
@@ -287,6 +303,237 @@ function resolveModelUrl(relativeUrl) {
   return new URL(relativeUrl, new URL(props.manifestUrl, window.location.href)).href
 }
 
+async function fetchArrayBuffer(relativeUrl) {
+  const response = await fetch(resolveModelUrl(relativeUrl), {
+    cache: 'force-cache',
+    signal: abortController.signal
+  })
+  if (!response.ok) throw new Error(`三维图层请求失败（HTTP ${response.status}）`)
+  return response.arrayBuffer()
+}
+
+function parseMeshBuffer(buffer) {
+  const view = new DataView(buffer)
+  const vertexCount = view.getUint32(0, true)
+  const indexCount = view.getUint32(4, true)
+  const positionOffset = 8
+  const scalarOffset = positionOffset + vertexCount * 3 * 4
+  const indexOffset = scalarOffset + vertexCount * 4
+  const expectedBytes = indexOffset + indexCount * 4
+  if (buffer.byteLength !== expectedBytes) {
+    throw new Error('三维网格二进制长度不匹配')
+  }
+  return {
+    positions: new Float32Array(buffer, positionOffset, vertexCount * 3),
+    scalars: new Float32Array(buffer, scalarOffset, vertexCount),
+    indices: new Uint32Array(buffer, indexOffset, indexCount)
+  }
+}
+
+function parseLineBuffer(buffer) {
+  const view = new DataView(buffer)
+  const pointCount = view.getUint32(0, true)
+  const expectedBytes = 4 + pointCount * 3 * 4
+  if (buffer.byteLength !== expectedBytes || pointCount % 2 !== 0) {
+    throw new Error('三维线框二进制长度不匹配')
+  }
+  return new Float32Array(buffer, 4, pointCount * 3)
+}
+
+function makeStressColors(values, range, palette) {
+  const colors = new Float32Array(values.length * 3)
+  const stops = palette.map((value) => new THREE.Color(value))
+  const minimum = Number(range[0])
+  const maximum = Number(range[1])
+  const span = Math.max(maximum - minimum, 1e-6)
+  const color = new THREE.Color()
+
+  for (let index = 0; index < values.length; index += 1) {
+    const scaled = THREE.MathUtils.clamp((values[index] - minimum) / span, 0, 1)
+    const stopPosition = scaled * (stops.length - 1)
+    const lowerIndex = Math.min(Math.floor(stopPosition), stops.length - 2)
+    color.lerpColors(stops[lowerIndex], stops[lowerIndex + 1], stopPosition - lowerIndex)
+    colors[index * 3] = color.r
+    colors[index * 3 + 1] = color.g
+    colors[index * 3 + 2] = color.b
+  }
+  return colors
+}
+
+async function createStressLayer(config, name, renderOrder) {
+  const data = parseMeshBuffer(await fetchArrayBuffer(config.url))
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(data.positions, 3))
+  geometry.setAttribute(
+    'color',
+    new THREE.BufferAttribute(
+      makeStressColors(
+        data.scalars,
+        pyvistaManifest.value.field.range,
+        pyvistaManifest.value.colormap
+      ),
+      3
+    )
+  )
+  geometry.setIndex(new THREE.BufferAttribute(data.indices, 1))
+  geometry.computeBoundingSphere()
+
+  const material = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: Number(config.opacity),
+    depthWrite: renderOrder !== 1
+  })
+  material.userData.baseOpacity = material.opacity
+  material.userData.baseTransparent = true
+  material.userData.baseDepthWrite = material.depthWrite
+
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.name = name
+  mesh.renderOrder = renderOrder
+  modelRoot.add(mesh)
+  return mesh
+}
+
+async function createSolidLayer(config, name, options = {}) {
+  const data = parseMeshBuffer(await fetchArrayBuffer(config.url))
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(data.positions, 3))
+  geometry.setIndex(new THREE.BufferAttribute(data.indices, 1))
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+
+  const material = new THREE.MeshPhongMaterial({
+    color: options.color || config.color || '#ffffff',
+    emissive: options.emissive || '#000000',
+    emissiveIntensity: options.emissiveIntensity || 0,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: Number(config.opacity),
+    depthWrite: false,
+    shininess: options.shininess ?? 24
+  })
+  material.userData.baseOpacity = material.opacity
+  material.userData.baseTransparent = true
+  material.userData.baseDepthWrite = false
+
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.name = name
+  mesh.renderOrder = options.renderOrder || 4
+  modelRoot.add(mesh)
+  return mesh
+}
+
+async function createLineLayer(relativeUrl, name, color, opacity, renderOrder) {
+  const positions = parseLineBuffer(await fetchArrayBuffer(relativeUrl))
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  const material = new THREE.LineBasicMaterial({
+    color,
+    transparent: opacity < 1,
+    opacity,
+    depthWrite: false
+  })
+  const lines = new THREE.LineSegments(geometry, material)
+  lines.name = name
+  lines.renderOrder = renderOrder
+  modelRoot.add(lines)
+  return lines
+}
+
+function addSceneGuides() {
+  const bounds = pyvistaManifest.value?.bounds
+  if (!Array.isArray(bounds) || bounds.length !== 2) return
+  const box = new THREE.Box3(
+    new THREE.Vector3(...bounds[0]),
+    new THREE.Vector3(...bounds[1])
+  )
+  boundsHelper = new THREE.Box3Helper(box, '#8b9aa0')
+  boundsHelper.material.transparent = true
+  boundsHelper.material.opacity = 0.58
+  boundsHelper.material.depthWrite = false
+  boundsHelper.renderOrder = 7
+  modelRoot.add(boundsHelper)
+
+  const size = box.getSize(new THREE.Vector3())
+  axesHelper = new THREE.AxesHelper(Math.max(size.length() * 0.09, 2.4))
+  axesHelper.position.copy(box.min)
+  axesHelper.renderOrder = 8
+  modelRoot.add(axesHelper)
+}
+
+async function loadPyvistaLayers() {
+  const layersUrl = manifest.value?.model?.pyvistaLayers
+  if (!layersUrl) return false
+  const response = await fetch(resolveModelUrl(layersUrl), {
+    cache: 'no-store',
+    signal: abortController.signal
+  })
+  if (!response.ok) throw new Error(`PyVista 图层清单请求失败（HTTP ${response.status}）`)
+  pyvistaManifest.value = await response.json()
+  const layers = pyvistaManifest.value.layers
+
+  modelRoot = new THREE.Group()
+  modelRoot.name = `${manifest.value?.source?.name || 'flac3d-sav'}-${props.phase}-pyvista`
+  scene.add(modelRoot)
+
+  const outerShell = await createStressLayer(layers.outerShell, 'PyVistaOuterShell', 1)
+  exteriorMeshes.push(outerShell)
+  loadProgress.value = 30
+
+  for (const [key, label] of [
+    ['sliceX', 'X'],
+    ['sliceY', 'Y'],
+    ['sliceZ', 'Z']
+  ]) {
+    const config = layers[key]
+    const slice = await createStressLayer(config, `PyVistaSlice${label}`, 2)
+    roadwayMeshes.push(slice)
+    const grid = await createLineLayer(
+      config.gridUrl,
+      `PyVistaSlice${label}Grid`,
+      '#15242b',
+      0.26,
+      3
+    )
+    sliceGridLines.push(grid)
+  }
+  loadProgress.value = 68
+
+  const tunnelWall = await createSolidLayer(layers.tunnelWall, 'PyVistaTunnelWall', {
+    color: '#ffffff',
+    shininess: 40,
+    renderOrder: 4
+  })
+  roadwayMeshes.push(tunnelWall)
+  const tunnelOutline = await createLineLayer(
+    layers.tunnelWall.edgeUrl,
+    'PyVistaTunnelFeatureEdges',
+    '#00f5ff',
+    0.95,
+    6
+  )
+  tunnelOutlineLines.push(tunnelOutline)
+
+  highStressVolume = await createSolidLayer(
+    layers.highStressSolid,
+    'PyVistaHighStressSolid',
+    {
+      color: layers.highStressSolid.color,
+      emissive: isAfter.value ? '#33130d' : '#5a0804',
+      emissiveIntensity: isAfter.value ? 0.18 : 0.32,
+      shininess: 28,
+      renderOrder: 5
+    }
+  )
+  highStressVolume.visible = false
+  renderedZoneCount.value = Number(layers.highStressSolid.cellCount)
+  renderedPeakStress.value = Number(layers.highStressSolid.stressRangeMpa?.[1])
+  addSceneGuides()
+  loadProgress.value = 86
+  return true
+}
 function configureMesh(mesh) {
   const name = mesh.name.toLowerCase()
   const isHighStress = name.includes('highstress')
@@ -331,6 +578,8 @@ function updateSurfaceVisibility() {
   const showExterior = surfaceMode.value !== 'roadway'
   roadwayMeshes.forEach((mesh) => { mesh.visible = showRoadway })
   exteriorMeshes.forEach((mesh) => { mesh.visible = showExterior })
+  sliceGridLines.forEach((lines) => { lines.visible = showRoadway })
+  tunnelOutlineLines.forEach((lines) => { lines.visible = showRoadway })
   const showTarget = targetActive.value && showRoadway
   if (highStressVolume) highStressVolume.visible = showTarget
   if (highStressHalo) highStressHalo.visible = showTarget
@@ -339,7 +588,7 @@ function updateSurfaceVisibility() {
 }
 
 function updateTargetVisualization() {
-  const dimRoadway = targetActive.value && surfaceMode.value !== 'exterior'
+  const dimRoadway = !pyvistaManifest.value && targetActive.value && surfaceMode.value !== 'exterior'
   roadwayMeshes.forEach((mesh) => {
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
     materials.forEach((material) => {
@@ -669,6 +918,22 @@ async function loadModel() {
       return
     }
 
+    if (manifest.value?.model?.pyvistaLayers) {
+      await loadPyvistaLayers()
+      buildReliefPlan()
+      modelBounds = new THREE.Box3().setFromObject(modelRoot)
+      const peakPosition = targetInfo.value?.peakPosition
+      targetPosition = Array.isArray(peakPosition) && peakPosition.length === 3
+        ? new THREE.Vector3(...peakPosition.map(Number))
+        : null
+      updateTargetVisualization()
+      updateWireframe()
+      fitCamera()
+      loadProgress.value = 100
+      setState('ready')
+      updateTargetMarker()
+      return
+    }
     const loader = new GLTFLoader()
     const modelUrl = resolveModelUrl(manifest.value.model.url)
     loader.load(
@@ -716,7 +981,7 @@ async function loadModel() {
 function initScene() {
   if (!container.value) return
   scene = new THREE.Scene()
-  scene.fog = new THREE.FogExp2('#061019', 0.0025)
+  scene.fog = new THREE.FogExp2('#f3f5f5', 0.0011)
 
   camera = new THREE.PerspectiveCamera(
     36,
@@ -734,10 +999,10 @@ function initScene() {
   })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75))
   renderer.setSize(container.value.clientWidth, container.value.clientHeight)
-  renderer.setClearColor(0x000000, 0)
+  renderer.setClearColor(0xf3f5f5, 1)
   renderer.outputColorSpace = THREE.SRGBColorSpace
-  renderer.toneMapping = THREE.ACESFilmicToneMapping
-  renderer.toneMappingExposure = 1.05
+  renderer.toneMapping = THREE.NoToneMapping
+  renderer.toneMappingExposure = 1
   container.value.prepend(renderer.domElement)
 
   controls = new OrbitControls(camera, renderer.domElement)
@@ -837,9 +1102,7 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   z-index: 1;
-  background:
-    radial-gradient(circle at 50% 45%, transparent 34%, rgba(3, 11, 17, .34) 78%),
-    linear-gradient(180deg, rgba(5, 15, 22, .08), rgba(3, 10, 16, .28));
+  background: linear-gradient(180deg, rgba(255, 255, 255, .03), rgba(35, 50, 55, .05));
   content: '';
   pointer-events: none;
 }
@@ -860,19 +1123,19 @@ onBeforeUnmount(() => {
 .model-header strong,
 .model-header small { display: block; }
 .model-header > div:first-child > span {
-  color: #7e9aa5;
+  color: #45606a;
   font: 9px Electronic, monospace;
   letter-spacing: 1.6px;
 }
 .model-header > div:first-child > strong {
   margin-top: 5px;
-  color: #dce8ea;
+  color: #17323b;
   font-size: 15px;
   font-weight: 500;
 }
 .model-header > div:first-child > small {
   margin-top: 3px;
-  color: #607a85;
+  color: #536b74;
   font: 9px Electronic, monospace;
 }
 .load-state {
@@ -977,7 +1240,7 @@ onBeforeUnmount(() => {
   grid-row: 1 / 4;
   width: 9px;
   height: 142px;
-  background: linear-gradient(to bottom, #9d001f, #e62b00 12%, #e47700 29%, #9cb900 46%, #00a86b 63%, #007fc4 78%, #0037a8 90%, #000b38);
+  background: linear-gradient(to bottom, #b00020, #ff6a00 13%, #fff7d6 25%, #fff200 38%, #7dff00 50%, #00e5a8 63%, #00b8ff 75%, #006dff 84%, #0033cc 92%, #081d58);
   box-shadow: 0 0 10px rgba(0, 127, 196, .3);
 }
 .stress-legend > span:first-child { align-self: start; }

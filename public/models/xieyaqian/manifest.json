@@ -11,6 +11,7 @@
   },
   "model": {
     "url": "model.glb",
+    "pyvistaLayers": "pyvista/layers.json",
     "coordinateUnit": "m",
     "bounds": [
       [
