@@ -1,142 +1,259 @@
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import SavModel3D from '../../components/SavModel3D.vue'
 
+const beforeManifestUrl = `${import.meta.env.BASE_URL}models/xieyaqian/manifest.json`
 const afterManifestUrl = `${import.meta.env.BASE_URL}models/xieyahou/manifest.json`
+const reliefPlanUrl = `${import.meta.env.BASE_URL}models/relief/straight-plan.json`
 
+const stage = ref('initial')
+const planVariant = ref('straight')
+const reliefPlan = ref([])
+const evaluationOpen = ref(false)
 const viewerStatuses = ref({
   before: { state: 'loading', message: '', manifest: null, metrics: null },
-  after: { state: 'loading', message: '', manifest: null, metrics: null }
+  after: { state: 'idle', message: '', manifest: null, metrics: null }
 })
 
-const modelSize = computed(() => {
-  const bounds = viewerStatuses.value.before.manifest?.model?.bounds
-  if (!Array.isArray(bounds) || bounds.length !== 2) return '--'
-  return bounds[1]
-    .map((value, axis) => Number(value) - Number(bounds[0][axis]))
-    .map((value) => value.toFixed(1))
-    .join(' × ')
+const stageOrder = ['initial', 'decision', 'relieving']
+const stageIndex = computed(() => stageOrder.indexOf(stage.value))
+const decisionReady = computed(() => stageIndex.value >= 1)
+const reliefStarted = computed(() => stage.value === 'relieving')
+const averageStress = computed(() => Number(viewerStatuses.value.before.metrics?.averageStressMpa) || 24.681)
+const peakStress = computed(() => Number(viewerStatuses.value.before.metrics?.peakStressMpa) || 46.6618)
+const thresholdStress = computed(() => averageStress.value * 1.2)
+const reliefDiameter = computed(() => peakStress.value >= averageStress.value * 1.5 ? 300 : 240)
+const reliefLengths = computed(() => reliefPlan.value
+  .map((item) => Number(item.relief_hole_length_m))
+  .filter(Number.isFinite))
+const reliefLengthRange = computed(() => reliefLengths.value.length
+  ? `${Math.min(...reliefLengths.value).toFixed(2)}–${Math.max(...reliefLengths.value).toFixed(2)} m`
+  : '--')
+const spacing = computed(() => {
+  if (reliefPlan.value.length < 2) return '--'
+  return `${Math.abs(
+    Number(reliefPlan.value[1].borehole_coordinate[1])
+    - Number(reliefPlan.value[0].borehole_coordinate[1])
+  ).toFixed(4)} m`
 })
-
-const allReady = computed(() => (
-  viewerStatuses.value.before.state === 'ready'
-  && viewerStatuses.value.after.state === 'ready'
-))
-
+const changePosition = computed(() => {
+  const coordinate = reliefPlan.value[0]?.diameter_change_coordinate
+  return coordinate ? `X = ${Number(coordinate[0]).toFixed(2)} m` : '--'
+})
+const sourceReady = computed(() => viewerStatuses.value.before.state === 'ready'
+  && (!reliefStarted.value || viewerStatuses.value.after.state === 'ready'))
 const peakChange = computed(() => {
-  const beforePeak = Number(viewerStatuses.value.before.metrics?.peakStressMpa)
-  const afterPeak = Number(viewerStatuses.value.after.metrics?.peakStressMpa)
-  if (!Number.isFinite(beforePeak) || !Number.isFinite(afterPeak)) return null
-  return (afterPeak - beforePeak) / beforePeak * 100
+  const before = Number(viewerStatuses.value.before.metrics?.peakStressMpa)
+  const after = Number(viewerStatuses.value.after.metrics?.peakStressMpa)
+  if (!Number.isFinite(before) || !Number.isFinite(after) || before === 0) return null
+  return (before - after) / before * 100
 })
 
-const peakChangeLabel = computed(() => {
-  if (peakChange.value === null) return '--'
-  const sign = peakChange.value > 0 ? '+' : ''
-  return `${sign}${peakChange.value.toFixed(1)}%`
-})
+const decisionParameters = computed(() => [
+  { index: 'P1', label: '高应力靶区', value: `σ ≥ ${thresholdStress.value.toFixed(2)} MPa`, detail: '理论判据：高于模型平均应力的 1.2 倍' },
+  { index: 'P2', label: '孔间距', value: spacing.value, detail: `${reliefPlan.value.length || 8} 孔覆盖靶区宽度` },
+  { index: 'P3', label: '钻进孔孔径', value: '60 mm', detail: '小孔径定值' },
+  { index: 'P4', label: '卸压孔孔径', value: `${reliefDiameter.value} mm`, detail: '峰值超过平均应力 1.5 倍，采用 300 mm' },
+  { index: 'P5', label: '钻进孔孔长', value: '3.90 m', detail: '巷道壁至高应力快速增长区' },
+  { index: 'P6', label: '卸压孔孔长', value: reliefLengthRange.value, detail: '靶区长度外延 0.5–1.0 m' },
+  { index: 'P7', label: '变径位置', value: changePosition.value, detail: planVariant.value === 'inclined' ? '沿倾斜方向定位' : '沿 +X 方向定位' }
+])
+
+const formulas = [
+  { code: 'F-01', title: 'Von-Mises 等效应力', expression: 'σᵥ = √{0.5[(σ₁₁−σ₂₂)²+(σ₂₂−σ₃₃)²+(σ₃₃−σ₁₁)²]+3(σ₁₂²+σ₂₃²+σ₁₃²)}' },
+  { code: 'F-02', title: '高应力靶区判据', expression: 'Ωₕ = { cell | σᵥ ≥ 1.2 × σ̄ }' },
+  { code: 'F-03', title: '孔数与孔间距', expression: 'N = ⌈Wₕ / R꜀⌉，S = Wₕ / N' },
+  { code: 'F-04', title: '卸压孔径决策', expression: 'Dᵣ = 300 mm (σₚ ≥ 1.5σ̄)，否则 240 mm' },
+  { code: 'F-05', title: '变径位置', expression: 'Pᵥ = P₀ + d · Lₚ' },
+  { code: 'F-06', title: '卸压孔长', expression: 'Lᵣ = Lₕ + ΔL，ΔL ∈ [0.5, 1.0] m' }
+]
 
 function updateStatus(status) {
-  viewerStatuses.value = {
-    ...viewerStatuses.value,
-    [status.phase || 'before']: status
+  viewerStatuses.value = { ...viewerStatuses.value, [status.phase || 'before']: status }
+}
+
+function advanceStage() {
+  if (stage.value === 'initial') {
+    stage.value = 'decision'
+  } else if (stage.value === 'decision') {
+    viewerStatuses.value.after = { state: 'loading', message: '', manifest: null, metrics: null }
+    stage.value = 'relieving'
   }
 }
+
+async function loadReliefPlan() {
+  try {
+    const response = await fetch(reliefPlanUrl, { cache: 'no-store' })
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    reliefPlan.value = await response.json()
+  } catch (error) {
+    console.error('卸压参数载入失败', error)
+  }
+}
+
+onMounted(() => {
+  loadReliefPlan()
+})
 </script>
 
 <template>
-  <main class="sav-viewer-page">
-    <header class="sav-page-header">
-      <router-link class="back-button" to="/" title="返回随钻智控主界面" aria-label="返回主页">
+  <main class="relief-page">
+    <header class="page-header">
+      <router-link class="icon-button" to="/" title="返回随钻智控主界面" aria-label="返回主页">
         <span aria-hidden="true">‹</span>
       </router-link>
-      <div class="page-brand">
-        <span>SZIC / RELIEF COMPARISON</span>
-        <strong>巷道卸压前后数值演示对比</strong>
+      <div class="brand">
+        <span>PRESSURE RELIEF / DECISION &amp; EVALUATION</span>
+        <strong>卸压决策与效能评估</strong>
       </div>
-      <div class="source-state">
-        <i :class="{ ready: allReady }"></i>
+      <div class="runtime-state">
+        <i :class="{ ready: sourceReady }"></i>
         <span>
-          <strong>{{ allReady ? '前后对比模型已载入' : '正在载入对比模型' }}</strong>
-          <small>xieyaqian.f3sav → xieyahou.f3sav · {{ modelSize }} m</small>
+          <strong>{{ sourceReady ? '数值模型就绪' : '正在载入数值模型' }}</strong>
+          <small>xieyaqian.f3sav · FLAC3D 6.0 SAVE</small>
         </span>
       </div>
     </header>
 
-    <section class="model-workspace">
-      <div class="workspace-label">
-        <span>BEFORE / AFTER</span>
-        <strong>800米埋深巷道卸压过程对比</strong>
-        <small>左侧为 xieyaqian.f3sav 卸压前模型 · 右侧为 xieyahou.f3sav 卸压后模型</small>
-      </div>
-      <div class="comparison-grid">
-        <article class="comparison-panel phase-before">
-          <header class="phase-heading">
-            <span>01 / 卸压前</span>
-            <strong>高应力靶区识别</strong>
-            <small>真实 SAV 体单元应力场</small>
+    <section class="page-body">
+      <div class="content-grid" :class="{ 'has-decision': decisionReady }">
+        <section class="model-section">
+          <header class="section-heading">
+            <div>
+              <span>NUMERICAL MODEL / 800 M DEPTH</span>
+              <strong>{{ reliefStarted ? '卸压前后数值演示对比' : '800米埋深巷道卸压前垂直应力数值演示模型' }}</strong>
+            </div>
+            <div v-if="decisionReady" class="plan-switch" role="group" aria-label="卸压孔方案">
+              <button type="button" :class="{ active: planVariant === 'straight' }" @click="planVariant = 'straight'">水平变径孔</button>
+              <button type="button" :class="{ active: planVariant === 'inclined' }" @click="planVariant = 'inclined'">
+                倾斜卸压 <small>参数化预览</small>
+              </button>
+            </div>
           </header>
-          <div class="model-viewport">
-            <i class="corner top-left"></i>
-            <i class="corner top-right"></i>
-            <i class="corner bottom-left"></i>
-            <i class="corner bottom-right"></i>
-            <SavModel3D
-              phase="before"
-              default-target-active
-              @status="updateStatus"
-            />
-          </div>
-        </article>
 
-        <article class="comparison-panel phase-after">
-          <header class="phase-heading">
-            <span>02 / 卸压后</span>
-            <strong>残余高应力区评估</strong>
-            <small>真实 SAV 卸压后体单元应力场</small>
-          </header>
-          <div class="model-viewport">
-            <i class="corner top-left"></i>
-            <i class="corner top-right"></i>
-            <i class="corner bottom-left"></i>
-            <i class="corner bottom-right"></i>
-            <SavModel3D
-              phase="after"
-              :manifest-url="afterManifestUrl"
-              default-target-active
-              @status="updateStatus"
-            />
+          <div class="model-grid" :class="{ comparing: reliefStarted }">
+            <article class="model-panel before-panel">
+              <div class="panel-label">
+                <span>01 / 卸压前</span>
+                <strong>{{ decisionReady ? '高应力靶区与卸压孔布置' : '原始应力场' }}</strong>
+              </div>
+              <div class="model-viewport">
+                <i class="corner top-left"></i><i class="corner top-right"></i>
+                <i class="corner bottom-left"></i><i class="corner bottom-right"></i>
+                <SavModel3D
+                  :key="beforeManifestUrl"
+                  phase="before"
+                  :manifest-url="beforeManifestUrl"
+                  :target-visible="decisionReady"
+                  :show-target-panel="false"
+                  :show-relief-plan="decisionReady"
+                  :relief-plan="reliefPlan"
+                  :relief-variant="planVariant"
+                  @status="updateStatus"
+                />
+              </div>
+            </article>
+
+            <Transition name="model-reveal">
+              <article v-if="reliefStarted" class="model-panel after-panel">
+                <div class="panel-label"><span>02 / 卸压后</span><strong>残余应力场与卸压结果</strong></div>
+                <div class="model-viewport">
+                  <i class="corner top-left"></i><i class="corner top-right"></i>
+                  <i class="corner bottom-left"></i><i class="corner bottom-right"></i>
+                  <SavModel3D
+                    phase="after"
+                    :manifest-url="afterManifestUrl"
+                    target-visible
+                    :show-target-panel="false"
+                    @status="updateStatus"
+                  />
+                </div>
+              </article>
+            </Transition>
           </div>
-        </article>
+        </section>
+
+        <Transition name="decision-slide">
+          <aside v-if="decisionReady" class="decision-panel">
+            <section class="target-summary">
+              <header><span>STEP 01 / TARGET RECOGNITION</span><strong>高应力靶区已识别</strong></header>
+              <div class="target-metrics">
+                <div><span>模型平均应力</span><strong>{{ averageStress.toFixed(2) }}<small> MPa</small></strong></div>
+                <div><span>理论识别阈值</span><strong>{{ thresholdStress.toFixed(2) }}<small> MPa</small></strong></div>
+                <div><span>当前脚本阈值</span><strong>19.50<small> MPa</small></strong></div>
+                <div><span>靶区峰值</span><strong class="warning">{{ peakStress.toFixed(2) }}<small> MPa</small></strong></div>
+              </div>
+              <p>理论判据与师兄脚本当前固定阈值分开展示，避免把 19.5 MPa 误写成 1.2 倍均值的计算结果。</p>
+            </section>
+
+            <section class="parameter-section">
+              <header><span>STEP 02 / PARAMETER DECISION</span><strong>七项卸压决策参数</strong></header>
+              <div class="parameter-list">
+                <article v-for="item in decisionParameters" :key="item.index">
+                  <span>{{ item.index }}</span>
+                  <div><small>{{ item.label }}</small><strong>{{ item.value }}</strong><p>{{ item.detail }}</p></div>
+                </article>
+              </div>
+            </section>
+
+            <details class="formula-section">
+              <summary><span>ALGORITHM FORMULAS</span><strong>决策公式与计算依据</strong><i>+</i></summary>
+              <div class="formula-list">
+                <article v-for="formula in formulas" :key="formula.code">
+                  <span>{{ formula.code }}</span>
+                  <div><strong>{{ formula.title }}</strong><code>{{ formula.expression }}</code></div>
+                </article>
+              </div>
+            </details>
+          </aside>
+        </Transition>
       </div>
-      <footer class="model-source">
-        <span>来源</span>
-        <strong>FLAC3D 6.0 SAVE</strong>
-        <i></i>
-        <span>卸压前高应力单元</span>
-        <strong>{{ viewerStatuses.before.metrics?.highStressZoneCount?.toLocaleString('zh-CN') || '--' }}</strong>
-        <i></i>
-        <span>卸压后残余单元</span>
-        <strong>{{ viewerStatuses.after.metrics?.highStressZoneCount?.toLocaleString('zh-CN') || '--' }}</strong>
-        <i></i>
-        <span>峰值变化率</span>
-        <strong :class="{ reduction: peakChange !== null && peakChange <= 0, increase: peakChange > 0 }">
-          {{ peakChangeLabel }}
-        </strong>
+
+      <footer class="command-bar">
+        <ol class="stage-track">
+          <li :class="{ active: stageIndex >= 0, current: stage === 'initial' }"><span>1</span><div><strong>原始模型</strong><small>读取卸压前 SAV</small></div></li>
+          <li :class="{ active: stageIndex >= 1, current: stage === 'decision' }"><span>2</span><div><strong>卸压决策</strong><small>识别靶区并生成参数</small></div></li>
+          <li :class="{ active: stageIndex >= 2, current: stage === 'relieving' }"><span>3</span><div><strong>卸压结果</strong><small>加载卸压后 SAV</small></div></li>
+        </ol>
+        <div class="command-actions">
+          <button v-if="!reliefStarted" class="primary-action" type="button" :disabled="viewerStatuses.before.state !== 'ready'" @click="advanceStage">
+            <span>{{ stage === 'initial' ? '识别靶区并生成卸压决策' : '开始卸压并生成结果' }}</span><i aria-hidden="true">→</i>
+          </button>
+          <button v-else class="evaluation-action" type="button" :disabled="viewerStatuses.after.state !== 'ready'" @click="evaluationOpen = true">卸压效果评估</button>
+        </div>
       </footer>
     </section>
+
+    <Transition name="modal">
+      <div v-if="evaluationOpen" class="modal-backdrop" @click.self="evaluationOpen = false">
+        <section class="evaluation-modal" role="dialog" aria-modal="true" aria-labelledby="evaluation-title">
+          <header>
+            <div><span>RELIEF EFFICIENCY MATRIX</span><strong id="evaluation-title">基于卸压效率矩阵的卸压效果随钻定量评估结果</strong></div>
+            <button type="button" title="关闭" aria-label="关闭" @click="evaluationOpen = false">×</button>
+          </header>
+          <div class="evaluation-grade"><span>效能分类</span><strong>待标定</strong><small>等级 A / B / C / D 将按报告表 5-8 的分级边界输出</small></div>
+          <div class="evaluation-grid">
+            <article><span>E₁</span><strong>应力峰值转移度</strong><b>公式接口已预留</b><small>待接入表 5-8 定义与 Td 参数</small></article>
+            <article><span>E₂</span><strong>应力峰值降低率</strong><b>{{ peakChange === null ? '待计算' : `${peakChange.toFixed(2)}%` }}</b><small>当前为前后模型峰值直接对照，正式值按报告公式替换</small></article>
+            <article><span>E₃</span><strong>围岩能量释放效率</strong><b>公式接口已预留</b><small>待接入卸压前后能量场积分结果</small></article>
+          </div>
+          <footer><span>数据来源：xieyaqian.f3sav / xieyahou.f3sav</span><strong>表 5-8 原始公式图片未包含在当前压缩包内，未虚构缺失定义</strong></footer>
+        </section>
+      </div>
+    </Transition>
   </main>
 </template>
 
 <style scoped>
-.sav-viewer-page {
-  --cyan: #69d2e3;
-  --line: rgba(113, 174, 190, .22);
-  position: relative;
+.relief-page {
+  --cyan: #00dbea;
+  --green: #61d39b;
+  --line: rgba(113, 174, 190, .2);
   display: grid;
-  grid-template-rows: 64px minmax(0, 1fr);
+  grid-template-rows: 68px minmax(0, 1fr);
   width: 100%;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 680px;
   overflow: hidden;
   color: #dce8ea;
   background:
@@ -145,28 +262,18 @@ function updateStatus(status) {
     #040d13;
   background-size: 38px 38px;
 }
-
-.sav-viewer-page::before {
-  position: absolute;
-  inset: 0;
-  content: '';
-  pointer-events: none;
-  background: linear-gradient(180deg, rgba(4, 13, 19, .08), rgba(2, 8, 12, .58));
-}
-
-.sav-page-header {
+.page-header {
   position: relative;
-  z-index: 3;
+  z-index: 20;
   display: grid;
   grid-template-columns: 42px 1fr auto;
   align-items: center;
   gap: 12px;
   padding: 0 18px;
-  background: rgba(4, 14, 21, .93);
+  background: rgba(4, 14, 21, .96);
   border-bottom: 1px solid var(--line);
 }
-
-.back-button {
+.icon-button {
   display: grid;
   place-items: center;
   width: 32px;
@@ -175,256 +282,159 @@ function updateStatus(status) {
   text-decoration: none;
   background: rgba(95, 151, 165, .06);
   border: 1px solid rgba(112, 176, 191, .22);
-  transition: color .2s ease, border-color .2s ease, background .2s ease;
 }
-
-.back-button:hover {
-  color: #e2f1f3;
-  background: rgba(91, 177, 195, .13);
-  border-color: rgba(111, 211, 229, .52);
-}
-
-.back-button span {
-  margin-top: -2px;
-  font: 25px/1 Arial, sans-serif;
-}
-
-.page-brand span,
-.page-brand strong,
-.source-state strong,
-.source-state small {
-  display: block;
-}
-
-.page-brand span {
-  color: #537680;
-  font: 9px Electronic, monospace;
-  letter-spacing: 1.6px;
-}
-
-.page-brand strong {
-  margin-top: 3px;
-  color: #dce9eb;
-  font-size: 17px;
-  font-weight: 500;
-  letter-spacing: 1px;
-}
-
-.source-state {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  text-align: right;
-}
-
-.source-state > i {
-  width: 7px;
-  height: 7px;
-  background: #c59d58;
-  border-radius: 50%;
-  box-shadow: 0 0 9px rgba(197, 157, 88, .65);
-}
-
-.source-state > i.ready {
-  background: #66c99e;
-  box-shadow: 0 0 9px rgba(102, 201, 158, .72);
-}
-
-.source-state > i.error {
-  background: #d65d4a;
-  box-shadow: 0 0 9px rgba(214, 93, 74, .72);
-}
-
-.source-state strong {
-  color: #cfdcdf;
-  font-size: 11px;
-  font-weight: 500;
-}
-
-.source-state small {
-  margin-top: 2px;
-  color: #59727c;
-  font: 9px Electronic, monospace;
-}
-
-.model-workspace {
-  position: relative;
-  z-index: 1;
+.icon-button:hover { color: #fff; border-color: rgba(0, 219, 234, .52); }
+.icon-button span { margin-top: -2px; font: 25px/1 Arial, sans-serif; }
+.brand span, .brand strong, .runtime-state strong, .runtime-state small { display: block; }
+.brand span { color: #537680; font: 10px Electronic, monospace; }
+.brand strong { margin-top: 3px; color: #dce9eb; font-size: 18px; font-weight: 500; }
+.runtime-state { display: flex; align-items: center; gap: 9px; text-align: right; }
+.runtime-state > i { width: 7px; height: 7px; background: #c59d58; border-radius: 50%; box-shadow: 0 0 9px rgba(197, 157, 88, .65); }
+.runtime-state > i.ready { background: var(--green); box-shadow: 0 0 9px rgba(97, 211, 155, .72); }
+.runtime-state strong { color: #cfdcdf; font-size: 12px; font-weight: 500; }
+.runtime-state small { margin-top: 3px; color: #59727c; font: 10px Electronic, monospace; }
+.page-body { position: relative; display: grid; grid-template-rows: minmax(0, 1fr) 74px; min-height: 0; }
+.content-grid {
   display: grid;
-  grid-template-rows: 49px minmax(0, 1fr) 34px;
-  min-height: 0;
-  padding: 12px 16px 14px;
-}
-
-.workspace-label {
-  display: flex;
-  align-items: baseline;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
-  min-width: 0;
-}
-
-.workspace-label > span {
-  color: #6dc7d7;
-  font: 10px Electronic, monospace;
-  letter-spacing: 1.8px;
-}
-
-.workspace-label > strong {
-  color: #d7e5e7;
-  font-size: 16px;
-  font-weight: 500;
-}
-
-.workspace-label > small {
-  color: #58737d;
-  font-size: 10px;
-}
-
-.comparison-grid {
-  position: relative;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
   min-height: 0;
+  padding: 12px 14px 0;
+  transition: grid-template-columns .35s ease;
 }
-
-.comparison-grid::after {
-  position: absolute;
-  z-index: 12;
-  top: 50%;
-  left: 50%;
-  width: 30px;
-  height: 30px;
-  color: #9ed5dc;
-  font: 19px/28px Arial, sans-serif;
-  text-align: center;
-  background: #06141c;
-  border: 1px solid rgba(105, 210, 227, .46);
-  content: '→';
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
-.comparison-panel {
-  display: grid;
-  grid-template-rows: 35px minmax(0, 1fr);
-  min-width: 0;
-  min-height: 0;
-}
-
-.phase-heading {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 10px;
-  padding: 0 11px;
-  background: rgba(4, 14, 21, .72);
-  border: 1px solid rgba(111, 174, 189, .16);
-  border-bottom: 0;
-}
-
-.phase-heading span {
-  color: #70cbd9;
-  font: 10px Electronic, monospace;
-}
-
-.phase-heading strong {
-  color: #d8e7e9;
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.phase-heading small {
-  color: #5f7b84;
-  font-size: 9px;
-}
-
-.phase-after .phase-heading span {
-  color: #75d1a8;
-}
-
-.model-viewport {
-  position: relative;
-  min-height: 0;
-  overflow: hidden;
-  background: rgba(4, 14, 21, .58);
-  border: 1px solid rgba(111, 174, 189, .2);
-  box-shadow: inset 0 0 45px rgba(31, 104, 124, .06);
-}
-
-.corner {
-  position: absolute;
-  z-index: 8;
-  width: 21px;
-  height: 21px;
-  pointer-events: none;
-}
-
+.content-grid.has-decision { grid-template-columns: minmax(0, 1fr) 356px; }
+.model-section { display: grid; grid-template-rows: 48px minmax(0, 1fr); min-width: 0; min-height: 0; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.section-heading span, .section-heading strong { display: block; }
+.section-heading span { color: #69cbd9; font: 10px Electronic, monospace; }
+.section-heading strong { margin-top: 4px; color: #d7e5e7; font-size: 16px; font-weight: 500; }
+.plan-switch { display: flex; padding: 3px; background: rgba(4, 14, 21, .82); border: 1px solid var(--line); }
+.plan-switch button { min-width: 98px; height: 30px; color: #738d96; font-size: 11px; background: transparent; border: 0; cursor: pointer; }
+.plan-switch button.active { color: #e5f4f5; background: rgba(0, 219, 234, .13); }
+.plan-switch small { margin-left: 4px; color: #67d29f; font: 8px Electronic, monospace; }
+.model-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-height: 0; }
+.model-grid.comparing { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.model-panel { display: grid; grid-template-rows: 36px minmax(0, 1fr); min-width: 0; min-height: 0; }
+.panel-label { display: flex; align-items: center; gap: 12px; padding: 0 11px; background: rgba(4, 14, 21, .82); border: 1px solid rgba(111, 174, 189, .16); border-bottom: 0; }
+.panel-label span { color: #6ed3df; font: 10px Electronic, monospace; }
+.panel-label strong { color: #d8e7e9; font-size: 12px; font-weight: 500; }
+.after-panel .panel-label span { color: var(--green); }
+.model-viewport { position: relative; min-height: 0; overflow: hidden; background: rgba(4, 14, 21, .58); border: 1px solid rgba(111, 174, 189, .2); }
+.corner { position: absolute; z-index: 8; width: 20px; height: 20px; pointer-events: none; }
 .top-left { top: -1px; left: -1px; border-top: 2px solid var(--cyan); border-left: 2px solid var(--cyan); }
 .top-right { top: -1px; right: -1px; border-top: 2px solid var(--cyan); border-right: 2px solid var(--cyan); }
 .bottom-left { bottom: -1px; left: -1px; border-bottom: 2px solid var(--cyan); border-left: 2px solid var(--cyan); }
 .bottom-right { right: -1px; bottom: -1px; border-right: 2px solid var(--cyan); border-bottom: 2px solid var(--cyan); }
-
-.model-source {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 7px;
-  color: #57717b;
-  font-size: 9px;
+.decision-panel { min-height: 0; overflow-y: auto; padding-right: 3px; scrollbar-color: rgba(86, 158, 173, .45) transparent; }
+.decision-panel section, .formula-section { margin-bottom: 9px; background: rgba(4, 14, 21, .86); border: 1px solid rgba(111, 174, 189, .18); }
+.decision-panel header { padding: 12px 13px 10px; border-bottom: 1px solid rgba(111, 174, 189, .14); }
+.decision-panel header span, .decision-panel header strong { display: block; }
+.decision-panel header span, .formula-section summary > span { color: #5fa9b6; font: 9px Electronic, monospace; }
+.decision-panel header strong, .formula-section summary > strong { margin-top: 4px; color: #dce8ea; font-size: 14px; font-weight: 500; }
+.target-metrics { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; padding: 9px; }
+.target-metrics div { padding: 9px; background: rgba(104, 145, 157, .06); }
+.target-metrics span, .target-metrics strong { display: block; }
+.target-metrics span { color: #69828a; font-size: 10px; }
+.target-metrics strong { margin-top: 4px; color: #e2ecee; font: 15px Electronic, monospace; }
+.target-metrics strong.warning { color: #ff795f; }
+.target-metrics small { color: #718890; font-size: 9px; }
+.target-summary > p { margin: 0; padding: 0 13px 12px; color: #758c94; font-size: 10px; line-height: 1.6; }
+.parameter-list { display: grid; gap: 1px; padding: 8px; }
+.parameter-list article { display: grid; grid-template-columns: 32px 1fr; gap: 9px; padding: 8px; background: rgba(105, 143, 154, .055); }
+.parameter-list article > span { color: #52b8c8; font: 10px Electronic, monospace; }
+.parameter-list small, .parameter-list strong, .parameter-list p { display: block; margin: 0; }
+.parameter-list small { color: #748b93; font-size: 10px; }
+.parameter-list strong { margin-top: 2px; color: #dce7e9; font: 14px Electronic, monospace; }
+.parameter-list p { margin-top: 3px; color: #58727b; font-size: 9px; }
+.formula-section summary { position: relative; display: block; padding: 12px 42px 12px 13px; cursor: pointer; list-style: none; }
+.formula-section summary::-webkit-details-marker { display: none; }
+.formula-section summary > span, .formula-section summary > strong { display: block; }
+.formula-section summary > i { position: absolute; top: 17px; right: 15px; color: #68cbd8; font: 20px/1 Arial, sans-serif; }
+.formula-section[open] summary > i { transform: rotate(45deg); }
+.formula-list { display: grid; gap: 1px; padding: 0 8px 8px; }
+.formula-list article { display: grid; grid-template-columns: 34px 1fr; gap: 8px; padding: 8px; background: rgba(105, 143, 154, .055); }
+.formula-list article > span { color: #6db7c3; font: 9px Electronic, monospace; }
+.formula-list strong, .formula-list code { display: block; }
+.formula-list strong { color: #aebfc4; font-size: 10px; font-weight: 500; }
+.formula-list code { margin-top: 5px; color: #d7e6e9; font: 10px/1.5 Consolas, monospace; white-space: normal; }
+.command-bar { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 18px; padding: 9px 15px; background: rgba(3, 12, 18, .96); border-top: 1px solid var(--line); }
+.stage-track { display: flex; align-items: center; margin: 0; padding: 0; list-style: none; }
+.stage-track li { position: relative; display: flex; align-items: center; gap: 8px; min-width: 174px; color: #516a72; }
+.stage-track li:not(:last-child)::after { width: 50px; height: 1px; margin: 0 15px; background: rgba(103, 143, 154, .2); content: ''; }
+.stage-track li.active:not(:last-child)::after { background: rgba(0, 219, 234, .38); }
+.stage-track li > span { display: grid; place-items: center; width: 26px; height: 26px; font: 10px Electronic, monospace; border: 1px solid rgba(104, 144, 155, .24); }
+.stage-track li.active > span { color: #c9f5f7; background: rgba(0, 219, 234, .11); border-color: rgba(0, 219, 234, .45); }
+.stage-track li.current > span { box-shadow: 0 0 14px rgba(0, 219, 234, .25); }
+.stage-track strong, .stage-track small { display: block; }
+.stage-track strong { color: #8da2a8; font-size: 11px; font-weight: 500; }
+.stage-track li.active strong { color: #dce8ea; }
+.stage-track small { margin-top: 2px; font-size: 9px; }
+.command-actions button { min-width: 220px; height: 42px; padding: 0 15px; color: #e8f8f9; font-size: 12px; border: 1px solid rgba(0, 219, 234, .5); cursor: pointer; }
+.command-actions button:disabled { cursor: wait; opacity: .45; }
+.primary-action { display: flex; align-items: center; justify-content: space-between; gap: 15px; background: rgba(0, 155, 171, .18); }
+.primary-action:hover:not(:disabled) { background: rgba(0, 180, 196, .28); }
+.primary-action i { font: 18px/1 Arial, sans-serif; }
+.evaluation-action { background: rgba(47, 165, 113, .22); border-color: rgba(97, 211, 155, .55) !important; }
+.modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px; background: rgba(0, 6, 10, .78); backdrop-filter: blur(5px); }
+.evaluation-modal { width: min(920px, 100%); max-height: calc(100vh - 48px); overflow: auto; background: #07131a; border: 1px solid rgba(99, 204, 218, .34); box-shadow: 0 28px 80px rgba(0, 0, 0, .5); }
+.evaluation-modal > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 20px 22px; border-bottom: 1px solid var(--line); }
+.evaluation-modal header span, .evaluation-modal header strong { display: block; }
+.evaluation-modal header span { color: #69cbd9; font: 10px Electronic, monospace; }
+.evaluation-modal header strong { margin-top: 5px; font-size: 19px; font-weight: 500; }
+.evaluation-modal header button { width: 32px; height: 32px; color: #91a8af; font-size: 22px; background: transparent; border: 1px solid var(--line); cursor: pointer; }
+.evaluation-grade { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 14px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
+.evaluation-grade span { color: #708890; font-size: 11px; }
+.evaluation-grade strong { color: #ffd06a; font-size: 24px; font-weight: 500; }
+.evaluation-grade small { color: #667e86; font-size: 10px; }
+.evaluation-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; padding: 16px; }
+.evaluation-grid article { min-height: 150px; padding: 16px; background: rgba(105, 148, 160, .06); border-top: 1px solid rgba(105, 190, 205, .25); }
+.evaluation-grid span { color: #65c4d3; font: 10px Electronic, monospace; }
+.evaluation-grid strong, .evaluation-grid b, .evaluation-grid small { display: block; }
+.evaluation-grid strong { margin-top: 14px; font-size: 14px; font-weight: 500; }
+.evaluation-grid b { margin-top: 15px; color: #d9e8ea; font: 18px Electronic, monospace; font-weight: 400; }
+.evaluation-grid small { margin-top: 10px; color: #6f858d; font-size: 10px; line-height: 1.55; }
+.evaluation-modal > footer { display: flex; justify-content: space-between; gap: 20px; padding: 14px 22px; color: #647d85; font-size: 9px; border-top: 1px solid var(--line); }
+.evaluation-modal > footer strong { color: #bd9b5f; font-weight: 500; }
+.decision-slide-enter-active, .decision-slide-leave-active, .model-reveal-enter-active, .model-reveal-leave-active, .modal-enter-active, .modal-leave-active { transition: opacity .25s ease, transform .25s ease; }
+.decision-slide-enter-from, .decision-slide-leave-to { opacity: 0; transform: translateX(18px); }
+.model-reveal-enter-from, .model-reveal-leave-to { opacity: 0; transform: translateX(15px); }
+.modal-enter-from, .modal-leave-to { opacity: 0; }
+@media (max-width: 1180px) {
+  .content-grid.has-decision { grid-template-columns: minmax(0, 1fr) 320px; }
+  .stage-track li { min-width: auto; }
+  .stage-track li:not(:last-child)::after { width: 28px; margin: 0 10px; }
+  .stage-track small { display: none; }
 }
-
-.model-source strong {
-  color: #9eb4ba;
-  font: 10px Electronic, monospace;
-  font-weight: 400;
+@media (max-width: 820px) {
+  .relief-page { height: 100vh; min-height: 0; overflow-y: auto; }
+  .page-header { grid-template-columns: 36px 1fr; padding: 0 12px; }
+  .runtime-state { display: none; }
+  .page-body { display: block; }
+  .content-grid, .content-grid.has-decision { display: block; padding: 10px; }
+  .model-section { grid-template-rows: auto auto; }
+  .section-heading { align-items: flex-start; margin-bottom: 10px; }
+  .section-heading strong { font-size: 14px; }
+  .model-grid, .model-grid.comparing { grid-template-columns: 1fr; }
+  .model-panel { grid-template-rows: 36px 540px; margin-bottom: 10px; }
+  .decision-panel { overflow: visible; }
+  .command-bar { position: sticky; bottom: 0; z-index: 30; grid-template-columns: 1fr; gap: 8px; }
+  .stage-track { justify-content: center; }
+  .stage-track li div { display: none; }
+  .stage-track li:not(:last-child)::after { width: 45px; }
+  .command-actions button { width: 100%; }
+  .evaluation-grid { grid-template-columns: 1fr; }
+  .evaluation-grade { grid-template-columns: auto auto; }
+  .evaluation-grade small { grid-column: 1 / -1; }
+  .evaluation-modal > footer { display: block; line-height: 1.7; }
 }
-
-.model-source .reduction {
-  color: #74d4aa;
-}
-
-.model-source .increase {
-  color: #ef9a73;
-}
-
-.model-source i {
-  width: 1px;
-  height: 9px;
-  margin: 0 4px;
-  background: rgba(111, 164, 177, .22);
-}
-
-@media (max-width: 720px) {
-  .sav-page-header {
-    grid-template-columns: 36px 1fr;
-    padding: 0 12px;
-  }
-  .source-state { display: none; }
-  .sav-viewer-page {
-    height: auto;
-    overflow: auto;
-  }
-  .model-workspace {
-    grid-template-rows: 54px auto 38px;
-    padding: 9px;
-  }
-  .workspace-label { display: block; }
-  .workspace-label > span,
-  .workspace-label > strong { display: block; }
-  .workspace-label > strong { margin-top: 4px; font-size: 14px; }
-  .workspace-label > small { display: none; }
-  .comparison-grid {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-  .comparison-grid::after { display: none; }
-  .comparison-panel { grid-template-rows: 35px 560px; }
-  .phase-heading small { display: none; }
-  .model-source {
-    flex-wrap: wrap;
-    justify-content: center;
-    padding-top: 7px;
-  }
+@media (max-width: 520px) {
+  .brand span { font-size: 8px; }
+  .brand strong { font-size: 15px; }
+  .section-heading { display: block; }
+  .plan-switch { margin-top: 9px; width: max-content; }
+  .model-panel { grid-template-rows: 36px 500px; }
+  .panel-label strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .modal-backdrop { padding: 10px; }
+  .evaluation-modal header strong { font-size: 15px; }
 }
 </style>

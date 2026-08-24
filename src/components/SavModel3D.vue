@@ -33,7 +33,7 @@
     </div>
 
     <aside
-      v-if="loadState === 'ready' && targetInfo"
+      v-if="loadState === 'ready' && targetInfo && showTargetPanel"
       class="target-identification"
       :class="{ active: targetActive }"
     >
@@ -108,6 +108,14 @@
       <div><span>坐标单位</span><strong>{{ manifest?.model?.coordinateUnit || 'm' }}</strong></div>
     </div>
 
+    <div v-if="loadState === 'ready' && showReliefPlan" class="relief-legend">
+      <strong>{{ reliefVariant === 'inclined' ? '倾斜卸压孔组' : '变径卸压孔组' }}</strong>
+      <span><i class="collar"></i>孔口</span>
+      <span><i class="pilot"></i>钻进段 60 mm</span>
+      <span><i class="change"></i>变径点</span>
+      <span><i class="relief"></i>卸压段 300 mm</span>
+    </div>
+
     <div class="view-hint" :class="{ visible: hovered }">
       <span>拖拽旋转</span><i></i><span>滚轮缩放</span>
     </div>
@@ -133,10 +141,31 @@ const props = defineProps({
   defaultTargetActive: {
     type: Boolean,
     default: false
+  },
+  targetVisible: {
+    type: Boolean,
+    default: null
+  },
+  showTargetPanel: {
+    type: Boolean,
+    default: true
+  },
+  showReliefPlan: {
+    type: Boolean,
+    default: false
+  },
+  reliefPlan: {
+    type: Array,
+    default: () => []
+  },
+  reliefVariant: {
+    type: String,
+    default: 'straight',
+    validator: (value) => ['straight', 'inclined'].includes(value)
   }
 })
 
-const emit = defineEmits(['status'])
+const emit = defineEmits(['status', 'target-change'])
 const container = ref(null)
 const targetMarker = ref(null)
 const manifest = ref(null)
@@ -147,7 +176,7 @@ const hovered = ref(false)
 const surfaceMode = ref('roadway')
 const wireframe = ref(false)
 const autoRotate = ref(false)
-const targetActive = ref(props.defaultTargetActive)
+const targetActive = ref(props.targetVisible ?? props.defaultTargetActive)
 const renderedZoneCount = ref(0)
 const renderedPeakStress = ref(null)
 
@@ -227,6 +256,7 @@ let modelBounds
 let targetPosition
 let highStressVolume
 let highStressHalo
+let reliefPlanGroup
 const roadwayMeshes = []
 const exteriorMeshes = []
 const legacyHighStressMeshes = []
@@ -304,6 +334,7 @@ function updateSurfaceVisibility() {
   const showTarget = targetActive.value && showRoadway
   if (highStressVolume) highStressVolume.visible = showTarget
   if (highStressHalo) highStressHalo.visible = showTarget
+  if (reliefPlanGroup) reliefPlanGroup.visible = props.showReliefPlan && showRoadway
   updateTargetMarker()
 }
 
@@ -329,6 +360,103 @@ function toggleTargetIdentification() {
     surfaceMode.value = 'roadway'
   }
   targetActive.value = !targetActive.value
+  emit('target-change', targetActive.value)
+}
+
+function makeCylinderBetween(start, end, radius, material) {
+  const direction = end.clone().sub(start)
+  const length = direction.length()
+  if (length <= 1e-6) return null
+  const geometry = new THREE.CylinderGeometry(radius, radius, length, 18, 1, false)
+  const mesh = new THREE.Mesh(geometry, material)
+  mesh.position.copy(start).add(end).multiplyScalar(0.5)
+  mesh.quaternion.setFromUnitVectors(
+    new THREE.Vector3(0, 1, 0),
+    direction.normalize()
+  )
+  return mesh
+}
+
+function reliefDirection(item) {
+  if (Array.isArray(item.direction) && item.direction.length === 3) {
+    return new THREE.Vector3(...item.direction.map(Number)).normalize()
+  }
+  if (props.reliefVariant === 'inclined') {
+    const angle = THREE.MathUtils.degToRad(12)
+    return new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).normalize()
+  }
+  const collar = new THREE.Vector3(...item.borehole_coordinate.map(Number))
+  const change = new THREE.Vector3(...item.diameter_change_coordinate.map(Number))
+  return change.sub(collar).normalize()
+}
+
+function buildReliefPlan() {
+  if (!modelRoot) return
+  if (reliefPlanGroup) {
+    modelRoot.remove(reliefPlanGroup)
+    disposeObject(reliefPlanGroup)
+  }
+  reliefPlanGroup = new THREE.Group()
+  reliefPlanGroup.name = 'PressureReliefPlan'
+
+  const pilotMaterial = new THREE.MeshStandardMaterial({
+    color: '#090d11',
+    roughness: 0.58,
+    metalness: 0.28
+  })
+  const reliefMaterial = new THREE.MeshStandardMaterial({
+    color: '#00ff66',
+    emissive: '#006f32',
+    emissiveIntensity: 0.85,
+    roughness: 0.38,
+    metalness: 0.08,
+    transparent: true,
+    opacity: 0.9
+  })
+  const collarMaterial = new THREE.MeshStandardMaterial({
+    color: '#ff00ff',
+    emissive: '#8f008f',
+    emissiveIntensity: 1.2
+  })
+  const changeMaterial = new THREE.MeshStandardMaterial({
+    color: '#fff000',
+    emissive: '#7e7100',
+    emissiveIntensity: 1.1
+  })
+
+  props.reliefPlan.forEach((item) => {
+    const collar = new THREE.Vector3(...item.borehole_coordinate.map(Number))
+    const direction = reliefDirection(item)
+    const pilotLength = Number(item.pilot_hole_length_m)
+    const reliefLength = Number(item.relief_hole_length_m)
+    const pilotRadius = Number(item.pilot_hole_diameter_m) * 0.5
+    const reliefRadius = Number(item.relief_hole_diameter_m) * 0.5
+    if (![pilotLength, reliefLength, pilotRadius, reliefRadius].every(Number.isFinite)) return
+
+    const change = collar.clone().addScaledVector(direction, pilotLength)
+    const reliefEnd = change.clone().addScaledVector(direction, reliefLength)
+    const pilotTube = makeCylinderBetween(collar, change, pilotRadius, pilotMaterial)
+    const reliefTube = makeCylinderBetween(change, reliefEnd, reliefRadius, reliefMaterial)
+    if (pilotTube) reliefPlanGroup.add(pilotTube)
+    if (reliefTube) reliefPlanGroup.add(reliefTube)
+
+    const collarMarker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.14, 18, 12),
+      collarMaterial
+    )
+    collarMarker.position.copy(collar)
+    reliefPlanGroup.add(collarMarker)
+
+    const changeMarker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.16, 18, 12),
+      changeMaterial
+    )
+    changeMarker.position.copy(change)
+    reliefPlanGroup.add(changeMarker)
+  })
+
+  reliefPlanGroup.visible = props.showReliefPlan
+  modelRoot.add(reliefPlanGroup)
 }
 
 function updateTargetMarker() {
@@ -491,6 +619,9 @@ function fitCamera() {
   if (targetActive.value && highStressVolume?.visible) {
     visibleObjects.push(highStressVolume)
   }
+  if (props.showReliefPlan && reliefPlanGroup?.visible) {
+    visibleObjects.push(reliefPlanGroup)
+  }
   if (!visibleObjects.length) return
   modelBounds = new THREE.Box3()
   visibleObjects.forEach((object) => modelBounds.expandByObject(object))
@@ -498,14 +629,12 @@ function fitCamera() {
   const size = modelBounds.getSize(new THREE.Vector3())
   const center = modelBounds.getCenter(new THREE.Vector3())
   const radius = Math.max(size.length() * 0.5, 1)
-  const direction = new THREE.Vector3(0, 1, 0)
-  const verticalHalfFov = THREE.MathUtils.degToRad(camera.fov * 0.5)
-  const horizontalHalfFov = Math.atan(Math.tan(verticalHalfFov) * camera.aspect)
-  const projectedDistance = Math.max(
-    size.x * 0.5 / Math.tan(horizontalHalfFov),
-    size.z * 0.5 / Math.tan(verticalHalfFov)
-  )
-  const distance = size.y * 0.5 + projectedDistance * 1.4
+  const direction = (
+    props.showReliefPlan
+      ? new THREE.Vector3(1.05, 1.35, 0.62)
+      : new THREE.Vector3(0.72, 1.35, 0.48)
+  ).normalize()
+  const distance = radius * (camera.aspect < 1 ? 3.35 : 2.85)
   camera.position.copy(center).add(direction.multiplyScalar(distance))
   camera.near = Math.max(radius / 1000, 0.01)
   camera.far = radius * 20
@@ -554,6 +683,7 @@ async function loadModel() {
           scene.add(modelRoot)
           loadProgress.value = 82
           await loadHighStressVolume()
+          buildReliefPlan()
           modelBounds = new THREE.Box3().setFromObject(modelRoot)
           const peakPosition = targetInfo.value?.peakPosition
           targetPosition = Array.isArray(peakPosition) && peakPosition.length === 3
@@ -670,6 +800,19 @@ watch(targetActive, () => {
   updateTargetVisualization()
   fitCamera()
 })
+watch(() => props.targetVisible, (value) => {
+  if (value === null) return
+  targetActive.value = value
+})
+watch(
+  () => [props.showReliefPlan, props.reliefVariant, props.reliefPlan],
+  () => {
+    buildReliefPlan()
+    updateSurfaceVisibility()
+    fitCamera()
+  },
+  { deep: true }
+)
 
 onMounted(initScene)
 
@@ -1026,6 +1169,56 @@ onBeforeUnmount(() => {
 .model-stats span { display: block; color: #657e88; font-size: 8px; }
 .model-stats strong { display: block; margin-top: 2px; color: #d7e3e5; font: 11px Electronic, monospace; }
 .model-stats small { color: #718a94; font-size: 8px; }
+.relief-legend {
+  position: absolute;
+  z-index: 5;
+  top: 83px;
+  left: 17px;
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  gap: 6px 14px;
+  min-width: 242px;
+  padding: 10px 11px;
+  color: #89a0a8;
+  font-size: 9px;
+  background: rgba(4, 14, 21, .91);
+  border: 1px solid rgba(0, 245, 255, .28);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, .24);
+  pointer-events: none;
+}
+.relief-legend strong {
+  grid-column: 1 / -1;
+  padding-bottom: 6px;
+  color: #dce8ea;
+  font-size: 11px;
+  font-weight: 500;
+  border-bottom: 1px solid rgba(112, 164, 177, .16);
+}
+.relief-legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.relief-legend i {
+  width: 12px;
+  height: 4px;
+  background: #111;
+}
+.relief-legend .collar {
+  height: 7px;
+  background: #ff00ff;
+  border-radius: 50%;
+}
+.relief-legend .change {
+  height: 7px;
+  background: #fff000;
+  border-radius: 50%;
+}
+.relief-legend .relief {
+  height: 6px;
+  background: #00ff66;
+}
 .view-hint {
   position: absolute;
   z-index: 4;
@@ -1054,6 +1247,7 @@ onBeforeUnmount(() => {
   .target-results { grid-template-columns: repeat(2, 1fr); }
   .target-results > div:last-of-type { grid-column: 1 / -1; }
   .stress-legend { right: 12px; }
+  .relief-legend { left: 12px; }
 }
 @media (max-width: 560px) {
   .model-header { left: 12px; right: 12px; }
@@ -1065,6 +1259,12 @@ onBeforeUnmount(() => {
     white-space: nowrap;
   }
   .target-identification { width: 176px; }
+  .relief-legend {
+    top: 74px;
+    width: 188px;
+    min-width: 0;
+    grid-template-columns: 1fr;
+  }
   .target-identification > button { min-height: 41px; padding: 6px 8px; }
   .target-results { padding: 6px; }
   .target-results footer { display: block; line-height: 1.55; }
