@@ -280,12 +280,15 @@ const legacyHighStressMeshes = []
 function setState(state, message = '') {
   loadState.value = state
   errorMessage.value = message
+  const field = pyvistaManifest.value?.field || manifest.value?.field || null
   emit('status', {
     state,
     message,
     manifest: manifest.value,
     phase: props.phase,
     metrics: displayTargetInfo.value
+      ? { ...displayTargetInfo.value, field }
+      : null
   })
 }
 
@@ -443,15 +446,15 @@ async function createLineLayer(relativeUrl, name, color, opacity, renderOrder) {
 }
 
 function addSceneGuides() {
-  const bounds = pyvistaManifest.value?.bounds
+  const bounds = pyvistaManifest.value?.bounds || manifest.value?.model?.bounds
   if (!Array.isArray(bounds) || bounds.length !== 2) return
   const box = new THREE.Box3(
     new THREE.Vector3(...bounds[0]),
     new THREE.Vector3(...bounds[1])
   )
-  boundsHelper = new THREE.Box3Helper(box, '#8b9aa0')
+  boundsHelper = new THREE.Box3Helper(box, '#6f9ba6')
   boundsHelper.material.transparent = true
-  boundsHelper.material.opacity = 0.58
+  boundsHelper.material.opacity = 0.52
   boundsHelper.material.depthWrite = false
   boundsHelper.renderOrder = 7
   modelRoot.add(boundsHelper)
@@ -543,9 +546,13 @@ function configureMesh(mesh) {
     const material = sourceMaterial.clone()
     material.vertexColors = !isHighStress && Boolean(mesh.geometry.getAttribute('color'))
     material.side = THREE.DoubleSide
-    material.depthWrite = !isExterior && !isHighStress
-    material.transparent = isExterior || isHighStress
-    if (isExterior) material.opacity = 0.16
+    material.depthWrite = false
+    material.transparent = true
+    if (isExterior) {
+      material.opacity = 0.58
+      if ('roughness' in material) material.roughness = 0.82
+      if ('metalness' in material) material.metalness = 0.02
+    }
     if (isHighStress) {
       material.color?.set('#ff3d2e')
       material.emissive?.set('#ff1f12')
@@ -554,6 +561,13 @@ function configureMesh(mesh) {
       material.polygonOffset = true
       material.polygonOffsetFactor = -2
       material.polygonOffsetUnits = -2
+    }
+    if (!isExterior && !isHighStress) {
+      material.vertexColors = false
+      material.color?.set('#ffffff')
+      material.opacity = 0.42
+      if ('roughness' in material) material.roughness = 0.58
+      if ('metalness' in material) material.metalness = 0.04
     }
     material.userData.baseOpacity = material.opacity
     material.userData.baseTransparent = material.transparent
@@ -570,6 +584,19 @@ function configureMesh(mesh) {
     exteriorMeshes.push(mesh)
   } else {
     roadwayMeshes.push(mesh)
+    const outline = new THREE.LineSegments(
+      new THREE.EdgesGeometry(mesh.geometry, 28),
+      new THREE.LineBasicMaterial({
+        color: '#00f5ff',
+        transparent: true,
+        opacity: 0.86,
+        depthWrite: false
+      })
+    )
+    outline.name = `${mesh.name || 'LegacyRoadway'}FeatureEdges`
+    outline.renderOrder = 6
+    mesh.add(outline)
+    tunnelOutlineLines.push(outline)
   }
 }
 
@@ -878,11 +905,7 @@ function fitCamera() {
   const size = modelBounds.getSize(new THREE.Vector3())
   const center = modelBounds.getCenter(new THREE.Vector3())
   const radius = Math.max(size.length() * 0.5, 1)
-  const direction = (
-    props.showReliefPlan
-      ? new THREE.Vector3(1.05, 1.35, 0.62)
-      : new THREE.Vector3(0.72, 1.35, 0.48)
-  ).normalize()
+  const direction = new THREE.Vector3(0.92, 1.35, 0.56).normalize()
   const distance = radius * (camera.aspect < 1 ? 3.35 : 2.85)
   camera.position.copy(center).add(direction.multiplyScalar(distance))
   camera.near = Math.max(radius / 1000, 0.01)
@@ -946,6 +969,7 @@ async function loadModel() {
         })
         try {
           scene.add(modelRoot)
+          addSceneGuides()
           loadProgress.value = 82
           await loadHighStressVolume()
           buildReliefPlan()
@@ -981,7 +1005,7 @@ async function loadModel() {
 function initScene() {
   if (!container.value) return
   scene = new THREE.Scene()
-  scene.fog = new THREE.FogExp2('#f3f5f5', 0.0011)
+  scene.fog = new THREE.FogExp2('#040d13', 0.0011)
 
   camera = new THREE.PerspectiveCamera(
     36,
@@ -999,7 +1023,7 @@ function initScene() {
   })
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75))
   renderer.setSize(container.value.clientWidth, container.value.clientHeight)
-  renderer.setClearColor(0xf3f5f5, 1)
+  renderer.setClearColor(0x040d13, 1)
   renderer.outputColorSpace = THREE.SRGBColorSpace
   renderer.toneMapping = THREE.NoToneMapping
   renderer.toneMappingExposure = 1
@@ -1102,7 +1126,7 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: linear-gradient(180deg, rgba(255, 255, 255, .03), rgba(35, 50, 55, .05));
+  background: linear-gradient(180deg, rgba(24, 68, 80, .04), rgba(1, 7, 11, .12));
   content: '';
   pointer-events: none;
 }
@@ -1123,19 +1147,19 @@ onBeforeUnmount(() => {
 .model-header strong,
 .model-header small { display: block; }
 .model-header > div:first-child > span {
-  color: #45606a;
+  color: #5f919d;
   font: 9px Electronic, monospace;
   letter-spacing: 1.6px;
 }
 .model-header > div:first-child > strong {
   margin-top: 5px;
-  color: #17323b;
+  color: #d9e8ea;
   font-size: 15px;
   font-weight: 500;
 }
 .model-header > div:first-child > small {
   margin-top: 3px;
-  color: #536b74;
+  color: #6f8b94;
   font: 9px Electronic, monospace;
 }
 .load-state {

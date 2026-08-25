@@ -42,7 +42,17 @@ const changePosition = computed(() => {
 })
 const sourceReady = computed(() => viewerStatuses.value.before.state === 'ready'
   && (!reliefStarted.value || viewerStatuses.value.after.state === 'ready'))
+const comparisonFields = computed(() => ({
+  before: viewerStatuses.value.before.metrics?.field?.name || '',
+  after: viewerStatuses.value.after.metrics?.field?.name || ''
+}))
+const comparableStressFields = computed(() => Boolean(
+  comparisonFields.value.before
+  && comparisonFields.value.after
+  && comparisonFields.value.before === comparisonFields.value.after
+))
 const peakChange = computed(() => {
+  if (!comparableStressFields.value) return null
   const before = Number(viewerStatuses.value.before.metrics?.peakStressMpa)
   const after = Number(viewerStatuses.value.after.metrics?.peakStressMpa)
   if (!Number.isFinite(before) || !Number.isFinite(after) || before === 0) return null
@@ -66,6 +76,37 @@ const formulas = [
   { code: 'F-04', title: '卸压孔径决策', expression: 'Dᵣ = 300 mm (σₚ ≥ 1.5σ̄)，否则 240 mm' },
   { code: 'F-05', title: '变径位置', expression: 'Pᵥ = P₀ + d · Lₚ' },
   { code: 'F-06', title: '卸压孔长', expression: 'Lᵣ = Lₕ + ΔL，ΔL ∈ [0.5, 1.0] m' }
+]
+
+const efficiencyMetrics = [
+  {
+    code: 'E1',
+    title: '应力峰值转移度',
+    expression: 'ηₜ = (L₁ − L₀) / L₀',
+    weight: '0.44',
+    definition: 'L₀、L₁分别为卸压前后应力峰值距巷道表面的距离'
+  },
+  {
+    code: 'E2',
+    title: '应力峰值降低率',
+    expression: 'ησ = (σpeak0 − σpeak) / σpeak0',
+    weight: '0.25',
+    definition: 'σpeak0、σpeak分别为卸压前后同一应力场口径下的峰值'
+  },
+  {
+    code: 'E3',
+    title: '围岩能量释放效率',
+    expression: 'ξₑ = (SED₁ − SED₀) / SED₀',
+    weight: '0.31',
+    definition: 'SED₀、SED₁分别为卸压前后围岩应变能密度评价值'
+  }
+]
+
+const efficiencyGrades = [
+  { grade: 'A', condition: 'T_d ≥ 0.60', diagnosis: '卸压效果达标', action: '保持当前卸压参数，进入持续随钻监测。' },
+  { grade: 'B', condition: 'T_d < 0.60，ηₜ为主要薄弱项', diagnosis: '深部应力转移不足', action: '检查孔长；将变径位置调整至高应力梯度区，必要时减小孔间距。' },
+  { grade: 'C', condition: 'T_d < 0.60，ησ为主要薄弱项', diagnosis: '应力峰值降幅不足', action: '安全范围内增大深部大孔径段、减小孔间距，并核验靶区覆盖范围。' },
+  { grade: 'D', condition: 'T_d < 0.60，ξₑ偏低或多项薄弱', diagnosis: '能量释放或综合效能不足', action: '增加有效卸压长度或孔径，联合优化各参数；必要时重新识别高应力靶区。' }
 ]
 
 function updateStatus(status) {
@@ -231,13 +272,47 @@ onMounted(() => {
             <div><span>RELIEF EFFICIENCY MATRIX</span><strong id="evaluation-title">基于卸压效率矩阵的卸压效果随钻定量评估结果</strong></div>
             <button type="button" title="关闭" aria-label="关闭" @click="evaluationOpen = false">×</button>
           </header>
-          <div class="evaluation-grade"><span>效能分类</span><strong>待标定</strong><small>等级 A / B / C / D 将按报告表 5-8 的分级边界输出</small></div>
-          <div class="evaluation-grid">
-            <article><span>E₁</span><strong>应力峰值转移度</strong><b>公式接口已预留</b><small>待接入表 5-8 定义与 Td 参数</small></article>
-            <article><span>E₂</span><strong>应力峰值降低率</strong><b>{{ peakChange === null ? '待计算' : `${peakChange.toFixed(2)}%` }}</b><small>当前为前后模型峰值直接对照，正式值按报告公式替换</small></article>
-            <article><span>E₃</span><strong>围岩能量释放效率</strong><b>公式接口已预留</b><small>待接入卸压前后能量场积分结果</small></article>
+          <div class="evaluation-grade">
+            <span>综合效能评分</span>
+            <strong>T<sub>d</sub> 待计算</strong>
+            <code>T<sub>d</sub> = 0.44η<sub>t</sub> + 0.25η<sub>σ</sub> + 0.31ξ<sub>e</sub></code>
+            <small>三项指标均接入卸压前后同源数值场后，自动输出 A / B / C / D 级诊断。</small>
           </div>
-          <footer><span>数据来源：xieyaqian.f3sav / xieyahou.f3sav</span><strong>表 5-8 原始公式图片未包含在当前压缩包内，未虚构缺失定义</strong></footer>
+          <div class="evaluation-grid">
+            <article v-for="metric in efficiencyMetrics" :key="metric.code">
+              <div class="metric-heading"><span>{{ metric.code }}</span><em>权重 {{ metric.weight }}</em></div>
+              <strong>{{ metric.title }}</strong>
+              <code>{{ metric.expression }}</code>
+              <b v-if="metric.code === 'E2'">{{ peakChange === null ? '待接入同源场数据' : `${peakChange.toFixed(2)}%` }}</b>
+              <b v-else>待接入数值结果</b>
+              <small>{{ metric.definition }}</small>
+            </article>
+          </div>
+          <section class="evaluation-matrix">
+            <header>
+              <span>EVALUATION CLASSIFICATION</span>
+              <strong>卸压效能分类与参数反馈规则</strong>
+            </header>
+            <div class="matrix-table" role="table" aria-label="卸压效能分类规则">
+              <div class="matrix-row matrix-head" role="row">
+                <span role="columnheader">等级</span>
+                <span role="columnheader">判定条件</span>
+                <span role="columnheader">诊断结果</span>
+                <span role="columnheader">参数调整建议</span>
+              </div>
+              <div v-for="item in efficiencyGrades" :key="item.grade" class="matrix-row" role="row">
+                <strong role="cell">{{ item.grade }}</strong>
+                <code role="cell">{{ item.condition }}</code>
+                <span role="cell">{{ item.diagnosis }}</span>
+                <p role="cell">{{ item.action }}</p>
+              </div>
+            </div>
+          </section>
+          <footer>
+            <span>数据来源：xieyaqian.f3sav / xieyahou.f3sav</span>
+            <strong v-if="!comparableStressFields">当前字段口径不同：卸压前为 {{ comparisonFields.before || '待载入' }}，卸压后为 {{ comparisonFields.after || '待载入' }}；不执行跨字段峰值计算。</strong>
+            <strong v-else>当前峰值降低率已按同源应力字段计算。</strong>
+          </footer>
         </section>
       </div>
     </Transition>
@@ -376,23 +451,44 @@ onMounted(() => {
 .primary-action i { font: 18px/1 Arial, sans-serif; }
 .evaluation-action { background: rgba(47, 165, 113, .22); border-color: rgba(97, 211, 155, .55) !important; }
 .modal-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 24px; background: rgba(0, 6, 10, .78); backdrop-filter: blur(5px); }
-.evaluation-modal { width: min(920px, 100%); max-height: calc(100vh - 48px); overflow: auto; background: #07131a; border: 1px solid rgba(99, 204, 218, .34); box-shadow: 0 28px 80px rgba(0, 0, 0, .5); }
+.evaluation-modal { width: min(1160px, 100%); max-height: calc(100vh - 48px); overflow: auto; background: #07131a; border: 1px solid rgba(99, 204, 218, .34); box-shadow: 0 28px 80px rgba(0, 0, 0, .5); }
 .evaluation-modal > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 20px 22px; border-bottom: 1px solid var(--line); }
 .evaluation-modal header span, .evaluation-modal header strong { display: block; }
 .evaluation-modal header span { color: #69cbd9; font: 10px Electronic, monospace; }
 .evaluation-modal header strong { margin-top: 5px; font-size: 19px; font-weight: 500; }
 .evaluation-modal header button { width: 32px; height: 32px; color: #91a8af; font-size: 22px; background: transparent; border: 1px solid var(--line); cursor: pointer; }
-.evaluation-grade { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 14px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
+.evaluation-grade { display: grid; grid-template-columns: auto auto minmax(300px, 1fr); align-items: center; gap: 14px 20px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
 .evaluation-grade span { color: #708890; font-size: 11px; }
 .evaluation-grade strong { color: #ffd06a; font-size: 24px; font-weight: 500; }
-.evaluation-grade small { color: #667e86; font-size: 10px; }
+.evaluation-grade strong sub { font-size: .6em; }
+.evaluation-grade code { justify-self: end; color: #e5f4f5; font: 18px/1.4 Consolas, monospace; }
+.evaluation-grade small { grid-column: 1 / -1; color: #667e86; font-size: 10px; }
 .evaluation-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; padding: 16px; }
-.evaluation-grid article { min-height: 150px; padding: 16px; background: rgba(105, 148, 160, .06); border-top: 1px solid rgba(105, 190, 205, .25); }
+.evaluation-grid article { min-height: 190px; padding: 16px; background: rgba(105, 148, 160, .06); border-top: 1px solid rgba(105, 190, 205, .25); }
+.metric-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .evaluation-grid span { color: #65c4d3; font: 10px Electronic, monospace; }
-.evaluation-grid strong, .evaluation-grid b, .evaluation-grid small { display: block; }
+.evaluation-grid em { color: #c5a764; font: normal 10px Electronic, monospace; }
+.evaluation-grid strong, .evaluation-grid code, .evaluation-grid b, .evaluation-grid small { display: block; }
 .evaluation-grid strong { margin-top: 14px; font-size: 14px; font-weight: 500; }
-.evaluation-grid b { margin-top: 15px; color: #d9e8ea; font: 18px Electronic, monospace; font-weight: 400; }
+.evaluation-grid code { min-height: 40px; margin-top: 13px; color: #dcebed; font: 14px/1.55 Consolas, monospace; }
+.evaluation-grid b { margin-top: 13px; color: #75d4aa; font: 14px Electronic, monospace; font-weight: 400; }
 .evaluation-grid small { margin-top: 10px; color: #6f858d; font-size: 10px; line-height: 1.55; }
+.evaluation-matrix { margin: 0 16px 16px; border: 1px solid rgba(105, 190, 205, .18); }
+.evaluation-matrix > header { padding: 13px 15px; border-bottom: 1px solid var(--line); }
+.evaluation-matrix > header span, .evaluation-matrix > header strong { display: block; }
+.evaluation-matrix > header span { color: #5fa9b6; font: 9px Electronic, monospace; }
+.evaluation-matrix > header strong { margin-top: 4px; color: #dce8ea; font-size: 14px; font-weight: 500; }
+.matrix-table { min-width: 780px; }
+.matrix-row { display: grid; grid-template-columns: 58px minmax(190px, .9fr) minmax(150px, .7fr) minmax(330px, 1.6fr); align-items: stretch; border-top: 1px solid rgba(105, 190, 205, .1); }
+.matrix-row:first-child { border-top: 0; }
+.matrix-row > * { display: flex; align-items: center; min-width: 0; margin: 0; padding: 10px 12px; border-left: 1px solid rgba(105, 190, 205, .1); }
+.matrix-row > *:first-child { border-left: 0; }
+.matrix-row > strong { justify-content: center; color: #ffd06a; font: 19px Electronic, monospace; }
+.matrix-row > code { color: #b9d7dc; font: 11px/1.55 Consolas, monospace; white-space: normal; }
+.matrix-row > span { color: #d3e1e4; font-size: 11px; }
+.matrix-row > p { color: #79939b; font-size: 10px; line-height: 1.65; }
+.matrix-head { color: #67838c; background: rgba(83, 138, 151, .06); font-size: 9px; }
+.matrix-head > span { color: #67838c; font-size: 9px; }
 .evaluation-modal > footer { display: flex; justify-content: space-between; gap: 20px; padding: 14px 22px; color: #647d85; font-size: 9px; border-top: 1px solid var(--line); }
 .evaluation-modal > footer strong { color: #bd9b5f; font-weight: 500; }
 .decision-slide-enter-active, .decision-slide-leave-active, .model-reveal-enter-active, .model-reveal-leave-active, .modal-enter-active, .modal-leave-active { transition: opacity .25s ease, transform .25s ease; }
@@ -423,8 +519,10 @@ onMounted(() => {
   .stage-track li:not(:last-child)::after { width: 45px; }
   .command-actions button { width: 100%; }
   .evaluation-grid { grid-template-columns: 1fr; }
-  .evaluation-grade { grid-template-columns: auto auto; }
-  .evaluation-grade small { grid-column: 1 / -1; }
+  .evaluation-grade { grid-template-columns: 1fr; }
+  .evaluation-grade code { justify-self: start; font-size: 14px; }
+  .evaluation-grade small { grid-column: auto; }
+  .evaluation-matrix { overflow-x: auto; }
   .evaluation-modal > footer { display: block; line-height: 1.7; }
 }
 @media (max-width: 520px) {
