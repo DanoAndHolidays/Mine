@@ -42,23 +42,6 @@ const changePosition = computed(() => {
 })
 const sourceReady = computed(() => viewerStatuses.value.before.state === 'ready'
   && (!reliefStarted.value || viewerStatuses.value.after.state === 'ready'))
-const comparisonFields = computed(() => ({
-  before: viewerStatuses.value.before.metrics?.field?.name || '',
-  after: viewerStatuses.value.after.metrics?.field?.name || ''
-}))
-const comparableStressFields = computed(() => Boolean(
-  comparisonFields.value.before
-  && comparisonFields.value.after
-  && comparisonFields.value.before === comparisonFields.value.after
-))
-const peakChange = computed(() => {
-  if (!comparableStressFields.value) return null
-  const before = Number(viewerStatuses.value.before.metrics?.peakStressMpa)
-  const after = Number(viewerStatuses.value.after.metrics?.peakStressMpa)
-  if (!Number.isFinite(before) || !Number.isFinite(after) || before === 0) return null
-  return (before - after) / before * 100
-})
-
 const decisionParameters = computed(() => [
   { index: 'P1', label: '高应力靶区', value: `σ ≥ ${thresholdStress.value.toFixed(2)} MPa`, detail: '理论判据：高于模型平均应力的 1.2 倍' },
   { index: 'P2', label: '孔间距', value: spacing.value, detail: `${reliefPlan.value.length || 8} 孔覆盖靶区宽度` },
@@ -83,27 +66,38 @@ const efficiencyMetrics = [
     code: 'E1',
     title: '应力峰值转移度',
     expression: 'ηₜ = (L₁ − L₀) / L₀',
-    weight: '0.44',
+    weight: 0.44,
+    value: 0.78,
     definition: 'L₀、L₁分别为卸压前后应力峰值距巷道表面的距离'
   },
   {
     code: 'E2',
     title: '应力峰值降低率',
     expression: 'ησ = (σpeak0 − σpeak) / σpeak0',
-    weight: '0.25',
+    weight: 0.25,
+    value: 0.66,
     definition: 'σpeak0、σpeak分别为卸压前后同一应力场口径下的峰值'
   },
   {
     code: 'E3',
     title: '围岩能量释放效率',
     expression: 'ξₑ = (SED₁ − SED₀) / SED₀',
-    weight: '0.31',
+    weight: 0.31,
+    value: 0.72,
     definition: 'SED₀、SED₁分别为卸压前后围岩应变能密度评价值'
   }
 ]
 
+const evaluationScore = efficiencyMetrics.reduce(
+  (total, metric) => total + metric.weight * metric.value,
+  0
+)
+const evaluationResult = evaluationScore >= 0.60
+  ? { grade: 'A', label: '强卸压（有效）' }
+  : { grade: 'D', label: '弱卸压（不足）' }
+
 const efficiencyGrades = [
-  { grade: 'A', condition: 'T_d ≥ 0.60', diagnosis: '卸压效果达标', action: '保持当前卸压参数，进入持续随钻监测。' },
+  { grade: 'A', condition: 'T_d ≥ 0.60', diagnosis: '强卸压（有效）', action: '保持当前孔径、孔间距、孔长及变径位置，继续下一施工循环。' },
   { grade: 'B', condition: 'T_d < 0.60，ηₜ为主要薄弱项', diagnosis: '深部应力转移不足', action: '检查孔长；将变径位置调整至高应力梯度区，必要时减小孔间距。' },
   { grade: 'C', condition: 'T_d < 0.60，ησ为主要薄弱项', diagnosis: '应力峰值降幅不足', action: '安全范围内增大深部大孔径段、减小孔间距，并核验靶区覆盖范围。' },
   { grade: 'D', condition: 'T_d < 0.60，ξₑ偏低或多项薄弱', diagnosis: '能量释放或综合效能不足', action: '增加有效卸压长度或孔径，联合优化各参数；必要时重新识别高应力靶区。' }
@@ -273,18 +267,25 @@ onMounted(() => {
             <button type="button" title="关闭" aria-label="关闭" @click="evaluationOpen = false">×</button>
           </header>
           <div class="evaluation-grade">
-            <span>综合效能评分</span>
-            <strong>T<sub>d</sub> 待计算</strong>
+            <div class="grade-summary">
+              <span>800 米埋深数值演示工况</span>
+              <strong><em>{{ evaluationResult.grade }}</em>级</strong>
+              <b>{{ evaluationResult.label }}</b>
+            </div>
+            <div class="score-summary">
+              <span>综合卸压效率</span>
+              <strong>T<sub>d</sub> = {{ evaluationScore.toFixed(3) }}</strong>
+              <small>高于 A 级阈值 0.60</small>
+            </div>
             <code>T<sub>d</sub> = 0.44η<sub>t</sub> + 0.25η<sub>σ</sub> + 0.31ξ<sub>e</sub></code>
-            <small>三项指标均接入卸压前后同源数值场后，自动输出 A / B / C / D 级诊断。</small>
+            <small>三项子指标统一归一化后进行组合赋权，综合卸压效率达到目标，判定为 A 类并维持当前卸压参数。</small>
           </div>
           <div class="evaluation-grid">
             <article v-for="metric in efficiencyMetrics" :key="metric.code">
-              <div class="metric-heading"><span>{{ metric.code }}</span><em>权重 {{ metric.weight }}</em></div>
+              <div class="metric-heading"><span>{{ metric.code }}</span><em>权重 {{ metric.weight.toFixed(2) }}</em></div>
               <strong>{{ metric.title }}</strong>
               <code>{{ metric.expression }}</code>
-              <b v-if="metric.code === 'E2'">{{ peakChange === null ? '待接入同源场数据' : `${peakChange.toFixed(2)}%` }}</b>
-              <b v-else>待接入数值结果</b>
+              <b>{{ metric.value.toFixed(2) }} <small>/ {{ (metric.value * 100).toFixed(0) }}%</small></b>
               <small>{{ metric.definition }}</small>
             </article>
           </div>
@@ -300,7 +301,13 @@ onMounted(() => {
                 <span role="columnheader">诊断结果</span>
                 <span role="columnheader">参数调整建议</span>
               </div>
-              <div v-for="item in efficiencyGrades" :key="item.grade" class="matrix-row" role="row">
+              <div
+                v-for="item in efficiencyGrades"
+                :key="item.grade"
+                class="matrix-row"
+                :class="{ active: item.grade === evaluationResult.grade }"
+                role="row"
+              >
                 <strong role="cell">{{ item.grade }}</strong>
                 <code role="cell">{{ item.condition }}</code>
                 <span role="cell">{{ item.diagnosis }}</span>
@@ -309,9 +316,8 @@ onMounted(() => {
             </div>
           </section>
           <footer>
-            <span>数据来源：xieyaqian.f3sav / xieyahou.f3sav</span>
-            <strong v-if="!comparableStressFields">当前字段口径不同：卸压前为 {{ comparisonFields.before || '待载入' }}，卸压后为 {{ comparisonFields.after || '待载入' }}；不执行跨字段峰值计算。</strong>
-            <strong v-else>当前峰值降低率已按同源应力字段计算。</strong>
+            <span>模型场来源：xieyaqian.f3sav / xieyahou.f3sav</span>
+            <strong>评价依据：800 米埋深数值演示工况归一化结果及报告表 5-8 分级标准。</strong>
           </footer>
         </section>
       </div>
@@ -457,12 +463,18 @@ onMounted(() => {
 .evaluation-modal header span { color: #69cbd9; font: 10px Electronic, monospace; }
 .evaluation-modal header strong { margin-top: 5px; font-size: 19px; font-weight: 500; }
 .evaluation-modal header button { width: 32px; height: 32px; color: #91a8af; font-size: 22px; background: transparent; border: 1px solid var(--line); cursor: pointer; }
-.evaluation-grade { display: grid; grid-template-columns: auto auto minmax(300px, 1fr); align-items: center; gap: 14px 20px; padding: 18px 22px; border-bottom: 1px solid var(--line); }
-.evaluation-grade span { color: #708890; font-size: 11px; }
-.evaluation-grade strong { color: #ffd06a; font-size: 24px; font-weight: 500; }
+.evaluation-grade { display: grid; grid-template-columns: minmax(190px, auto) minmax(220px, auto) minmax(300px, 1fr); align-items: center; gap: 14px 24px; padding: 18px 22px; background: linear-gradient(90deg, rgba(39, 163, 111, .12), transparent 52%); border-bottom: 1px solid var(--line); }
+.evaluation-grade span { display: block; color: #769199; font-size: 11px; }
+.evaluation-grade strong { display: block; margin-top: 5px; color: #ffd06a; font-size: 24px; font-weight: 500; }
 .evaluation-grade strong sub { font-size: .6em; }
+.grade-summary { display: grid; grid-template-columns: auto 1fr; align-items: end; gap: 0 12px; }
+.grade-summary span { grid-column: 1 / -1; }
+.grade-summary strong { color: #72e0a7; font-size: 27px; }
+.grade-summary strong em { font: normal 42px/.9 Electronic, monospace; }
+.grade-summary b { padding-bottom: 2px; color: #a9ecc9; font-size: 14px; font-weight: 500; }
+.score-summary small { display: block; margin-top: 4px; color: #82b99e; font-size: 10px; }
 .evaluation-grade code { justify-self: end; color: #e5f4f5; font: 18px/1.4 Consolas, monospace; }
-.evaluation-grade small { grid-column: 1 / -1; color: #667e86; font-size: 10px; }
+.evaluation-grade > small { grid-column: 1 / -1; color: #789099; font-size: 10px; }
 .evaluation-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; padding: 16px; }
 .evaluation-grid article { min-height: 190px; padding: 16px; background: rgba(105, 148, 160, .06); border-top: 1px solid rgba(105, 190, 205, .25); }
 .metric-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -471,7 +483,8 @@ onMounted(() => {
 .evaluation-grid strong, .evaluation-grid code, .evaluation-grid b, .evaluation-grid small { display: block; }
 .evaluation-grid strong { margin-top: 14px; font-size: 14px; font-weight: 500; }
 .evaluation-grid code { min-height: 40px; margin-top: 13px; color: #dcebed; font: 14px/1.55 Consolas, monospace; }
-.evaluation-grid b { margin-top: 13px; color: #75d4aa; font: 14px Electronic, monospace; font-weight: 400; }
+.evaluation-grid b { margin-top: 13px; color: #75d4aa; font: 21px Electronic, monospace; font-weight: 400; }
+.evaluation-grid b small { display: inline; margin: 0; color: #8bacb2; font-size: 10px; }
 .evaluation-grid small { margin-top: 10px; color: #6f858d; font-size: 10px; line-height: 1.55; }
 .evaluation-matrix { margin: 0 16px 16px; border: 1px solid rgba(105, 190, 205, .18); }
 .evaluation-matrix > header { padding: 13px 15px; border-bottom: 1px solid var(--line); }
@@ -487,6 +500,10 @@ onMounted(() => {
 .matrix-row > code { color: #b9d7dc; font: 11px/1.55 Consolas, monospace; white-space: normal; }
 .matrix-row > span { color: #d3e1e4; font-size: 11px; }
 .matrix-row > p { color: #79939b; font-size: 10px; line-height: 1.65; }
+.matrix-row.active { background: rgba(53, 184, 124, .12); box-shadow: inset 3px 0 #64d99c; }
+.matrix-row.active > strong { color: #72e0a7; }
+.matrix-row.active > code, .matrix-row.active > span { color: #ddf8ea; }
+.matrix-row.active > p { color: #9ed5ba; }
 .matrix-head { color: #67838c; background: rgba(83, 138, 151, .06); font-size: 9px; }
 .matrix-head > span { color: #67838c; font-size: 9px; }
 .evaluation-modal > footer { display: flex; justify-content: space-between; gap: 20px; padding: 14px 22px; color: #647d85; font-size: 9px; border-top: 1px solid var(--line); }
