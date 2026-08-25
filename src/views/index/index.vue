@@ -716,7 +716,7 @@ const trendCurrent = computed(() => trendCoordinates.value[telemetryIndex.value]
 const findings = computed(() => {
   if (!store.ringCloud) return ['加载 Vtest4 环形钻孔数据中...']
   return [
-    'A / B / C 三组共 33 个钻孔已沿巷道纵向组成空间反演场',
+    'A / B / C 三组共 33 个钻孔沿巷道纵向布置，相邻钻孔按 30° 扇形左右交错钻入围岩',
     `拟合采用 ${store.ringCloud.meta.fittingMethod}，曲线平均粗糙度降低 ${(store.ringCloud.meta.meanRoughnessReduction * 100).toFixed(1)}%`,
     '钻孔从拱形巷道表面向半透明围岩实体内部延伸，径向范围为 0–125 cm',
     '应力场和损伤场采用相同的三维围岩坐标，可直接进行空间位置对照',

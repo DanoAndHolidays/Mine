@@ -110,6 +110,7 @@ const SURFACE_STEPS = 48
 const RADIAL_STEPS = 9
 const MAX_RENDER_FPS = 30
 const FRAME_INTERVAL = 1000 / MAX_RENDER_FPS
+const BOREHOLE_FAN_HALF_ANGLE = THREE.MathUtils.degToRad(15)
 
 let scene, camera, renderer, controls, resizeObserver, intersectionObserver, animationFrame
 let rootGroup, fieldPoints, fieldSurface, fieldLayerGroup, rockMass, rockEdges, cavitySurface, roadwayFloor
@@ -138,6 +139,7 @@ const scratchIdentityQuaternion = new THREE.Quaternion()
 const scratchScale = new THREE.Vector3()
 const scratchMidpoint = new THREE.Vector3()
 const scratchDirection = new THREE.Vector3()
+const longitudinalAxis = new THREE.Vector3(1, 0, 0)
 const cylinderAxis = new THREE.Vector3(0, 1, 0)
 
 function requestRender(settleMs = 0) {
@@ -603,25 +605,34 @@ function isSelectedBorehole(borehole, index) {
   return groupMatches && (borehole?.id === props.selectedBoreholeId || index === selectedNumber)
 }
 
+function boreholeFanDirection(normal, groupIndex, boreholeIndex) {
+  const side = (groupIndex + boreholeIndex) % 2 === 0 ? -1 : 1
+  return normal.clone()
+    .multiplyScalar(Math.cos(BOREHOLE_FAN_HALF_ANGLE))
+    .addScaledVector(longitudinalAxis, side * Math.sin(BOREHOLE_FAN_HALF_ANGLE))
+    .normalize()
+}
+
 function createBoreholes() {
   if (boreholeGroup) {
     rootGroup.remove(boreholeGroup)
     disposeObject(boreholeGroup)
   }
   boreholeEntries = []
-  sectionGroups.value.forEach((group) => {
+  sectionGroups.value.forEach((group, groupIndex) => {
     group.boreholes.forEach((borehole, index) => {
       const surfaceRatio = index / Math.max(group.boreholes.length - 1, 1)
       const start = archPoint(surfaceRatio, .035)
       start.x = group.longitudinalM
       const normal = archNormal(surfaceRatio)
-      const end = start.clone().addScaledVector(normal, FIELD_DEPTH_M)
-      boreholeEntries.push({ borehole, index, group, start, normal, end })
+      const direction = boreholeFanDirection(normal, groupIndex, index)
+      const end = start.clone().addScaledVector(direction, FIELD_DEPTH_M)
+      boreholeEntries.push({ borehole, index, group, start, direction, end })
     })
   })
 
   boreholeGroup = new THREE.Group()
-  boreholeGroup.name = '巷道表面钻入围岩的三组实体钻孔'
+  boreholeGroup.name = '巷道表面30度扇形左右交错的三组实体钻孔'
   const count = boreholeEntries.length
   const tubeGeometry = new THREE.CylinderGeometry(.048, .048, 1, 8, 1, true)
   const collarGeometry = new THREE.SphereGeometry(.075, 8, 6)
@@ -675,7 +686,7 @@ function updateBoreholeHeads() {
   if (!boreholeHeads) return
   const radialRatio = THREE.MathUtils.clamp(props.slice / 100, 0, 1)
   boreholeEntries.forEach((entry, index) => {
-    const position = scratchMidpoint.copy(entry.start).addScaledVector(entry.normal, FIELD_DEPTH_M * radialRatio)
+    const position = scratchMidpoint.copy(entry.start).addScaledVector(entry.direction, FIELD_DEPTH_M * radialRatio)
     setInstancePosition(boreholeHeads, position, index, isSelectedBorehole(entry.borehole, entry.index) ? 1.28 : .82)
   })
   boreholeHeads.instanceMatrix.needsUpdate = true
