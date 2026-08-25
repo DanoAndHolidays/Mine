@@ -541,15 +541,25 @@ function configureMesh(mesh) {
   const name = mesh.name.toLowerCase()
   const isHighStress = name.includes('highstress')
   const isExterior = name.includes('exterior')
+  const hasVertexColors = Boolean(mesh.geometry.getAttribute('color'))
   const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
   const configured = materials.map((sourceMaterial) => {
-    const material = sourceMaterial.clone()
-    material.vertexColors = !isHighStress && Boolean(mesh.geometry.getAttribute('color'))
+    const material = hasVertexColors && !isHighStress
+      ? new THREE.MeshBasicMaterial({
+        color: '#ffffff',
+        vertexColors: true,
+        side: THREE.DoubleSide,
+        transparent: true,
+        toneMapped: false
+      })
+      : sourceMaterial.clone()
+    material.vertexColors = !isHighStress && hasVertexColors
     material.side = THREE.DoubleSide
-    material.depthWrite = false
     material.transparent = true
     if (isExterior) {
-      material.opacity = 0.58
+      material.color?.set('#ffffff')
+      material.opacity = 0.68
+      material.depthWrite = false
       if ('roughness' in material) material.roughness = 0.82
       if ('metalness' in material) material.metalness = 0.02
     }
@@ -558,23 +568,26 @@ function configureMesh(mesh) {
       material.emissive?.set('#ff1f12')
       material.emissiveIntensity = 1.15
       material.opacity = 0.86
+      material.depthWrite = false
       material.polygonOffset = true
       material.polygonOffsetFactor = -2
       material.polygonOffsetUnits = -2
     }
     if (!isExterior && !isHighStress) {
-      material.vertexColors = false
       material.color?.set('#ffffff')
-      material.opacity = 0.42
-      if ('roughness' in material) material.roughness = 0.58
-      if ('metalness' in material) material.metalness = 0.04
+      material.opacity = hasVertexColors ? 0.92 : 0.58
+      material.depthWrite = hasVertexColors
+      if ('roughness' in material) material.roughness = 0.48
+      if ('metalness' in material) material.metalness = 0.02
     }
     material.userData.baseOpacity = material.opacity
     material.userData.baseTransparent = material.transparent
     material.userData.baseDepthWrite = material.depthWrite
+    material.needsUpdate = true
     return material
   })
   mesh.material = Array.isArray(mesh.material) ? configured : configured[0]
+  mesh.renderOrder = isExterior ? 1 : (isHighStress ? 5 : 4)
   mesh.castShadow = false
   mesh.receiveShadow = false
   if (isHighStress) {
@@ -589,7 +602,7 @@ function configureMesh(mesh) {
       new THREE.LineBasicMaterial({
         color: '#00f5ff',
         transparent: true,
-        opacity: 0.86,
+        opacity: 0.9,
         depthWrite: false
       })
     )
