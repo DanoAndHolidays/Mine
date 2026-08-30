@@ -1,0 +1,107 @@
+{
+  "ready": true,
+  "source": {
+    "name": "03_model_II_inclined10_Ds120_Dl240_S1600_P5_L15.f3sav",
+    "type": "ITASCA SAVE FILE",
+    "product": "FLAC3D",
+    "version": "6.0",
+    "title": "Deep roadway variable-diameter pressure-relief model · inclined 10°",
+    "archive": "qingxiexieya.zip",
+    "innerArchive": "qingxie-inner.7z",
+    "sizeBytes": 3869887813,
+    "sha256": "975B5B2DE4F3ACBEA00046BFB9B94FB07373CE7BD6CA9ECA83014B193990D62E"
+  },
+  "model": {
+    "url": "model.glb",
+    "coordinateUnit": "m",
+    "bounds": [
+      [
+        0.0,
+        -4.8,
+        0.0
+      ],
+      [
+        30.0,
+        4.8,
+        28.9
+      ]
+    ],
+    "roadwayFaceCount": 16584,
+    "exteriorFaceCount": 82752,
+    "roadwayVertexCount": 99504,
+    "exteriorVertexCount": 496512,
+    "activeZoneCount": 1546614,
+    "highStressZoneCount": 187499,
+    "reliefGeometry": "inclined 10°; derived from the supplied inclined SAVE geometry export"
+  },
+  "field": {
+    "name": "minimum principal stress magnitude",
+    "unit": "MPa",
+    "range": [
+      2.03791,
+      55.6173
+    ]
+  },
+  "targetIdentification": {
+    "method": "active zone stress >= average active-zone stress * 1.2",
+    "thresholdMultiplier": 1.2,
+    "averageStressMpa": 24.8215,
+    "thresholdStressMpa": 29.7858,
+    "peakStressMpa": 55.6173,
+    "peakPosition": [
+      14.1,
+      4.05,
+      11.85
+    ],
+    "bounds": [
+      [
+        0.1,
+        -4.75,
+        9.23
+      ],
+      [
+        24.5,
+        4.75,
+        18.8786
+      ]
+    ],
+    "centroid": [
+      14.768849433864599,
+      0.013312871001978756,
+      13.279645988520661
+    ],
+    "source": "FLAC3D active zone centers",
+    "activeZoneCount": 1546614,
+    "candidateHighStressZoneCount": 277983,
+    "highStressZoneCount": 187499,
+    "activeZoneRatio": 0.12123192988037093,
+    "roadwayInfluenceDistanceM": 5.0,
+    "selection": "stress threshold and cross-section distance to roadway surface",
+    "volumeUrl": "high-stress-zones.bin",
+    "volumeEncoding": "float32-le: x,y,z,stressMpa",
+    "volumeRecordBytes": 16,
+    "volumeStressRangeMpa": [
+      29.7858,
+      55.6173
+    ]
+  },
+  "extraction": {
+    "rawFaceCount": 115920,
+    "duplicateFaceCount": 16584,
+    "uniqueFaceCount": 99336,
+    "bounds": [
+      [
+        0.0,
+        -4.8,
+        0.0
+      ],
+      [
+        30.0,
+        4.8,
+        28.9
+      ]
+    ],
+    "sourceGeometry": "supplied inclined SAVE model; browser surface asset aligned to the 10° relief direction"
+  },
+  "generatedAt": "2026-08-30T00:00:00+08:00"
+}

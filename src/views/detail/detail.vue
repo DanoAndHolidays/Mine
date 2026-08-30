@@ -3,7 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 import SavModel3D from '../../components/SavModel3D.vue'
 
 const beforeManifestUrl = `${import.meta.env.BASE_URL}models/xieyaqian/manifest.json`
-const afterManifestUrl = `${import.meta.env.BASE_URL}models/xieyahou/manifest.json`
+const afterManifestUrl = `${import.meta.env.BASE_URL}models/xieyahou-inclined/manifest.json`
 // The supplied FLAC3D SAVE is the inclined-10° variable-diameter model.
 const reliefPlanUrl = `${import.meta.env.BASE_URL}models/relief/inclined-plan.json`
 
@@ -198,6 +198,9 @@ onMounted(loadReliefPlan)
                     :manifest-url="afterManifestUrl"
                     target-visible
                     :show-target-panel="false"
+                    :show-relief-plan="reliefStarted"
+                    :relief-plan="reliefPlan"
+                    :relief-variant="'inclined'"
                     @status="updateStatus"
                   />
                 </div>
@@ -314,7 +317,7 @@ onMounted(loadReliefPlan)
             </div>
           </section>
           <footer>
-            <span>模型场来源：xieyaqian.f3sav / xieyahou.f3sav</span>
+            <span>模型场来源：xieyaqian.f3sav / 03_model_II_inclined10_Ds120_Dl240_S1600_P5_L15.f3sav</span>
             <strong>评价依据：800 米埋深数值演示工况归一化结果及报告表 5-8 分级标准。</strong>
           </footer>
         </section>
