@@ -114,6 +114,11 @@ const RADIAL_STEPS = 9
 const MAX_RENDER_FPS = 30
 const FRAME_INTERVAL = 1000 / MAX_RENDER_FPS
 const BOREHOLE_FAN_BASE_ANGLE_DEGREES = 15
+// The stress inversion currently concentrates the red/high values over the crown.
+// Keep the roadway geometry unchanged, but place those same measured borehole
+// records on the two side walls for the stress view only. The damage/error views
+// continue to use the original surface order.
+const STRESS_SURFACE_BOREHOLE_ORDER = [4, 5, 3, 2, 0, 1, 9, 10, 8, 7, 6]
 const BOREHOLE_EXTRA_ANGLE_DEGREES = [5, 7, 9, 6, 8, 10, 7, 9, 6, 8, 5]
 const BOREHOLE_TUBE_RADIUS = 0.024
 const BOREHOLE_COLLAR_RADIUS = 0.048
@@ -226,8 +231,16 @@ function sampleAtDepth(borehole, radialRatio) {
   return samples[index]
 }
 
-function sampleValue(group, surfaceRatio, radialRatio) {
+function surfaceBoreholes(group) {
   const boreholes = group?.boreholes || []
+  if (props.metric !== 'stress' || boreholes.length !== STRESS_SURFACE_BOREHOLE_ORDER.length) {
+    return boreholes
+  }
+  return STRESS_SURFACE_BOREHOLE_ORDER.map(index => boreholes[index]).filter(Boolean)
+}
+
+function sampleValue(group, surfaceRatio, radialRatio) {
+  const boreholes = surfaceBoreholes(group)
   if (!boreholes.length) return 0
   const position = THREE.MathUtils.clamp(surfaceRatio, 0, 1) * (boreholes.length - 1)
   const lower = Math.floor(position)
@@ -769,7 +782,7 @@ function createBoreholes() {
   boreholeGroup.name = '巷道表面20-25度扇形左右交错的三组实体钻孔'
 
   sectionGroups.value.forEach((group, groupIndex) => {
-    const entries = (group.boreholes || []).map((borehole, index) => {
+    const entries = surfaceBoreholes(group).map((borehole, index) => {
       const surfaceRatio = index / Math.max((group.boreholes || []).length - 1, 1)
       const start = archPoint(surfaceRatio, .035)
       start.x = group.longitudinalM
@@ -889,8 +902,7 @@ function updateBoreholeHeads() {
   })
 
   const center = selectedSectionGroup.value
-  const selectedIndex = Math.max(0, Number(props.selectedBoreholeId.match(/(\d+)$/)?.[1] || 1) - 1)
-  const borehole = center?.boreholes?.[selectedIndex]
+  const borehole = surfaceBoreholes(center).find(item => item?.id === props.selectedBoreholeId)
   const sample = sampleAtDepth(borehole, radialRatio)
   if (borehole && sample) emit('sample', { borehole, sample, sliceProgress: props.slice })
 }
