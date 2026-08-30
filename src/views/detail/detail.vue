@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import SavModel3D from '../../components/SavModel3D.vue'
 
-const beforeManifestUrl = `${import.meta.env.BASE_URL}models/xieyahou/manifest.json`
+const beforeManifestUrl = `${import.meta.env.BASE_URL}models/xieyaqian/manifest.json`
 const afterManifestUrl = `${import.meta.env.BASE_URL}models/xieyahou-inclined/manifest.json`
 // Each SAV export has its own coordinate-aligned drilling plan. The before model
 // is the supplied horizontal post-relief geometry; the after model is the supplied 10°
