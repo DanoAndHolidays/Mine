@@ -2,12 +2,17 @@
 import { computed, onMounted, ref } from 'vue'
 import SavModel3D from '../../components/SavModel3D.vue'
 
-const beforeManifestUrl = `${import.meta.env.BASE_URL}models/xieyaqian/manifest.json`
+const beforeManifestUrl = `${import.meta.env.BASE_URL}models/xieyahou/manifest.json`
 const afterManifestUrl = `${import.meta.env.BASE_URL}models/xieyahou-inclined/manifest.json`
-// The supplied FLAC3D SAVE is the inclined-10° variable-diameter model.
-const reliefPlanUrl = `${import.meta.env.BASE_URL}models/relief/inclined-plan.json`
+// Each SAV export has its own coordinate-aligned drilling plan. The before model
+// is the supplied horizontal post-relief geometry; the after model is the supplied 10°
+// inclined relief export. Keeping the plans separate prevents overlaying the
+// inclined coordinates on the horizontal roadway geometry.
+const beforeReliefPlanUrl = `${import.meta.env.BASE_URL}models/relief/straight-plan.json`
+const afterReliefPlanUrl = `${import.meta.env.BASE_URL}models/relief/inclined-plan.json`
 
 const stage = ref('initial')
+const beforeReliefPlan = ref([])
 const reliefPlan = ref([])
 let reliefPlanRequestId = 0
 const evaluationOpen = ref(false)
@@ -24,7 +29,22 @@ const reliefResultShown = computed(() => stage.value === 'relieving')
 const averageStress = computed(() => Number(viewerStatuses.value.before.metrics?.averageStressMpa) || 24.681)
 const peakStress = computed(() => Number(viewerStatuses.value.before.metrics?.peakStressMpa) || 46.6618)
 const thresholdStress = computed(() => averageStress.value * 1.2)
-const reliefDiameter = computed(() => peakStress.value >= averageStress.value * 1.5 ? 300 : 240)
+const planPilotDiameter = computed(() => {
+  const value = Number(reliefPlan.value[0]?.pilot_hole_diameter_m)
+  return Number.isFinite(value) ? value * 1000 : 60
+})
+const reliefDiameter = computed(() => {
+  const value = Number(reliefPlan.value[0]?.relief_hole_diameter_m)
+  return Number.isFinite(value)
+    ? value * 1000
+    : (peakStress.value >= averageStress.value * 1.5 ? 300 : 240)
+})
+const pilotLengths = computed(() => reliefPlan.value
+  .map((item) => Number(item.pilot_hole_length_m))
+  .filter(Number.isFinite))
+const pilotLengthRange = computed(() => pilotLengths.value.length
+  ? `${Math.min(...pilotLengths.value).toFixed(2)}–${Math.max(...pilotLengths.value).toFixed(2)} m`
+  : '--')
 const reliefLengths = computed(() => reliefPlan.value
   .map((item) => Number(item.relief_hole_length_m))
   .filter(Number.isFinite))
@@ -38,6 +58,10 @@ const spacing = computed(() => {
     - Number(reliefPlan.value[0].borehole_coordinate[1])
   ).toFixed(4)} m`
 })
+const reliefAngle = computed(() => {
+  const value = Number(reliefPlan.value[0]?.angle_deg)
+  return Number.isFinite(value) ? `${value.toFixed(1)}°` : '倾斜方向'
+})
 const changePosition = computed(() => {
   const item = reliefPlan.value[0]
   const coordinate = item?.diameter_change_coordinate
@@ -48,12 +72,12 @@ const sourceReady = computed(() => viewerStatuses.value.before.state === 'ready'
   && (!reliefPreviewShown.value || viewerStatuses.value.after.state === 'ready'))
 const decisionParameters = computed(() => [
   { index: 'P1', label: '高应力靶区', value: `σ ≥ ${thresholdStress.value.toFixed(2)} MPa`, detail: '理论判据：高于模型平均应力的 1.2 倍' },
-  { index: 'P2', label: '孔间距', value: spacing.value, detail: `${reliefPlan.value.length || 8} 孔覆盖靶区宽度` },
-  { index: 'P3', label: '钻进孔孔径', value: '60 mm', detail: '小孔径定值' },
-  { index: 'P4', label: '卸压孔孔径', value: `${reliefDiameter.value} mm`, detail: '峰值超过平均应力 1.5 倍，采用 300 mm' },
-  { index: 'P5', label: '钻进孔孔长', value: '3.90 m', detail: '巷道壁至高应力快速增长区' },
-  { index: 'P6', label: '卸压孔孔长', value: reliefLengthRange.value, detail: '靶区长度外延 0.5–1.0 m' },
-  { index: 'P7', label: '变径位置', value: changePosition.value, detail: '沿 10° 倾斜方向定位（来自 FLAC3D SAVE 模型）' }
+  { index: 'P2', label: '孔间距', value: spacing.value, detail: `${reliefPlan.value.length || 0} 孔覆盖模型中的卸压带` },
+  { index: 'P3', label: '钻进孔孔径', value: `${planPilotDiameter.value} mm`, detail: '按倾斜 SAVE 模型小孔段截面' },
+  { index: 'P4', label: '卸压孔孔径', value: `${reliefDiameter.value} mm`, detail: '按倾斜 SAVE 模型宽卸压段截面' },
+  { index: 'P5', label: '钻进孔孔长', value: pilotLengthRange.value, detail: '孔口至模型变径界面的小孔段长度' },
+  { index: 'P6', label: '卸压孔孔长', value: reliefLengthRange.value, detail: '模型变径界面至卸压段末端的长度' },
+  { index: 'P7', label: '变径位置', value: changePosition.value, detail: `沿 ${reliefAngle.value} 倾斜方向定位（来自 FLAC3D SAVE 模型）` }
 ])
 
 const formulas = [
@@ -125,10 +149,20 @@ function advanceStage() {
 async function loadReliefPlan() {
   const requestId = ++reliefPlanRequestId
   try {
-    const response = await fetch(reliefPlanUrl, { cache: 'no-store' })
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    const nextPlan = await response.json()
-    if (requestId === reliefPlanRequestId) reliefPlan.value = nextPlan
+    const [beforeResponse, afterResponse] = await Promise.all([
+      fetch(beforeReliefPlanUrl, { cache: 'no-store' }),
+      fetch(afterReliefPlanUrl, { cache: 'no-store' })
+    ])
+    if (!beforeResponse.ok) throw new Error(`基准卸压参数 HTTP ${beforeResponse.status}`)
+    if (!afterResponse.ok) throw new Error(`倾斜卸压参数 HTTP ${afterResponse.status}`)
+    const [nextBeforePlan, nextAfterPlan] = await Promise.all([
+      beforeResponse.json(),
+      afterResponse.json()
+    ])
+    if (requestId === reliefPlanRequestId) {
+      beforeReliefPlan.value = nextBeforePlan
+      reliefPlan.value = nextAfterPlan
+    }
   } catch (error) {
     console.error('卸压参数载入失败', error)
   }
@@ -164,7 +198,7 @@ onMounted(loadReliefPlan)
               <span>NUMERICAL MODEL / 800 M DEPTH</span>
               <strong>{{ reliefPreviewShown ? '卸压前后数值演示对比' : '800米埋深巷道卸压前 Von-Mises 应力数值演示模型' }}</strong>
             </div>
-            <div v-if="decisionReady" class="plan-badge">倾斜卸压 · 10° SAVE 数据</div>
+            <div v-if="decisionReady" class="plan-badge">水平基准 → 倾斜卸压 · 10° SAVE 数据</div>
           </header>
 
           <div class="model-grid" :class="{ comparing: reliefPreviewShown }">
@@ -183,8 +217,8 @@ onMounted(loadReliefPlan)
                   :target-visible="decisionReady"
                   :show-target-panel="false"
                   :show-relief-plan="decisionReady"
-                  :relief-plan="reliefPlan"
-                  :relief-variant="'inclined'"
+                  :relief-plan="beforeReliefPlan"
+                  :relief-variant="'straight'"
                   @status="updateStatus"
                 />
               </div>

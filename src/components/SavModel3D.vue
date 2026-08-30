@@ -111,9 +111,9 @@
     <div v-if="loadState === 'ready' && showReliefPlan" class="relief-legend">
       <strong>{{ reliefVariant === 'inclined' ? '倾斜卸压孔组' : '水平变径卸压孔组' }}</strong>
       <span><i class="collar"></i>孔口</span>
-      <span><i class="pilot"></i>钻进段 60 mm</span>
+      <span><i class="pilot"></i>钻进段 {{ pilotDiameterLabel }}</span>
       <span><i class="change"></i>变径点</span>
-      <span><i class="relief"></i>卸压段 300 mm</span>
+      <span><i class="relief"></i>卸压段 {{ reliefDiameterLabel }}</span>
     </div>
 
     <div class="view-hint" :class="{ visible: hovered }">
@@ -197,6 +197,15 @@ const modelTitle = computed(() => (
     ? '800米埋深巷道卸压后数值演示模型'
     : '800米埋深巷道卸压前数值演示模型'
 ))
+
+const pilotDiameterLabel = computed(() => {
+  const value = Number(props.reliefPlan[0]?.pilot_hole_diameter_m)
+  return Number.isFinite(value) ? `${(value * 1000).toFixed(0)} mm` : '小孔径'
+})
+const reliefDiameterLabel = computed(() => {
+  const value = Number(props.reliefPlan[0]?.relief_hole_diameter_m)
+  return Number.isFinite(value) ? `${(value * 1000).toFixed(0)} mm` : '大孔径'
+})
 
 const sourceSummary = computed(() => {
   const source = manifest.value?.source
@@ -694,9 +703,23 @@ function makeCylinderBetween(start, end, radius, material) {
   return mesh
 }
 
-function reliefDirection(item) {
+function coordinateFromItem(value) {
+  if (!Array.isArray(value) || value.length !== 3) return null
+  const numbers = value.map(Number)
+  return numbers.every(Number.isFinite) ? new THREE.Vector3(...numbers) : null
+}
+
+function reliefDirection(item, collar = null, change = null) {
+  // The collar and diameter-change coordinates are the authoritative geometry
+  // exported from the SAV data. Derive the axis from those coordinates first so
+  // a plan cannot drift when its stored angle/length has been rounded.
+  const coordinateDirection = change && collar ? change.clone().sub(collar) : null
+  if (coordinateDirection?.lengthSq() > 1e-10) {
+    return coordinateDirection.normalize()
+  }
   if (Array.isArray(item.direction) && item.direction.length === 3) {
-    return new THREE.Vector3(...item.direction.map(Number)).normalize()
+    const direction = coordinateFromItem(item.direction)
+    if (direction?.lengthSq() > 1e-10) return direction.normalize()
   }
   if (props.reliefVariant === 'inclined') {
     const angleDeg = Number(item.angle_deg)
@@ -705,9 +728,7 @@ function reliefDirection(item) {
       return new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).normalize()
     }
   }
-  const collar = new THREE.Vector3(...item.borehole_coordinate.map(Number))
-  const change = new THREE.Vector3(...item.diameter_change_coordinate.map(Number))
-  return change.sub(collar).normalize()
+  return new THREE.Vector3(1, 0, 0)
 }
 
 function buildReliefPlan() {
@@ -745,16 +766,19 @@ function buildReliefPlan() {
   })
 
   props.reliefPlan.forEach((item) => {
-    const collar = new THREE.Vector3(...item.borehole_coordinate.map(Number))
-    const direction = reliefDirection(item)
+    const collar = coordinateFromItem(item.borehole_coordinate)
+    const change = coordinateFromItem(item.diameter_change_coordinate)
+    const storedEnd = coordinateFromItem(item.relief_end_coordinate)
     const pilotLength = Number(item.pilot_hole_length_m)
     const reliefLength = Number(item.relief_hole_length_m)
     const pilotRadius = Number(item.pilot_hole_diameter_m) * 0.5
     const reliefRadius = Number(item.relief_hole_diameter_m) * 0.5
-    if (![pilotLength, reliefLength, pilotRadius, reliefRadius].every(Number.isFinite)) return
+    if (!collar || !change || ![pilotLength, reliefLength, pilotRadius, reliefRadius].every(Number.isFinite)) return
 
-    const change = collar.clone().addScaledVector(direction, pilotLength)
-    const reliefEnd = change.clone().addScaledVector(direction, reliefLength)
+    const direction = reliefDirection(item, collar, change)
+    // Keep the SAV-exported diameter-change point exact. Only the end of the
+    // relief segment is extrapolated when the source plan does not provide it.
+    const reliefEnd = storedEnd || change.clone().addScaledVector(direction, reliefLength)
     const pilotTube = makeCylinderBetween(collar, change, pilotRadius, pilotMaterial)
     const reliefTube = makeCylinderBetween(change, reliefEnd, reliefRadius, reliefMaterial)
     if (pilotTube) reliefPlanGroup.add(pilotTube)
