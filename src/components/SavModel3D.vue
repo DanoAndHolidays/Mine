@@ -109,7 +109,7 @@
     </div>
 
     <div v-if="loadState === 'ready' && showReliefPlan" class="relief-legend">
-      <strong>{{ reliefVariant === 'inclined' ? '倾斜卸压孔组' : '变径卸压孔组' }}</strong>
+      <strong>{{ reliefVariant === 'inclined' ? '倾斜卸压孔组' : '水平变径卸压孔组' }}</strong>
       <span><i class="collar"></i>孔口</span>
       <span><i class="pilot"></i>钻进段 60 mm</span>
       <span><i class="change"></i>变径点</span>
@@ -671,8 +671,11 @@ function reliefDirection(item) {
     return new THREE.Vector3(...item.direction.map(Number)).normalize()
   }
   if (props.reliefVariant === 'inclined') {
-    const angle = THREE.MathUtils.degToRad(12)
-    return new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).normalize()
+    const angleDeg = Number(item.angle_deg)
+    if (Number.isFinite(angleDeg)) {
+      const angle = THREE.MathUtils.degToRad(angleDeg)
+      return new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle)).normalize()
+    }
   }
   const collar = new THREE.Vector3(...item.borehole_coordinate.map(Number))
   const change = new THREE.Vector3(...item.diameter_change_coordinate.map(Number))

@@ -25,12 +25,26 @@ dist-ssr
 screenshots/
 scripts/
 screenshot-*.png
+sav-model-*.png
 architecture_diagram.png
 dashboard-full.png
 _font_test.png
 page-snapshot.txt
 snap-main.txt
 public/data/VTEST_*.csv
+
+# Local SAV extraction and browser QA workspaces
+.codex-tools/
+.codex-doc-work/
+.playwright-mcp/
+
+# Keep the reproducible SAV-to-GLB converter
+!scripts/
+scripts/*
+!scripts/flac3d/
+scripts/flac3d/*
+!scripts/flac3d/build_xieyaqian_glb.py
+!scripts/flac3d/export_xieyaqian_glb.py
 
 # Package-manager artifacts created by local tooling
 .pnpm-store/

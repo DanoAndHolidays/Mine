@@ -4,11 +4,12 @@ import SavModel3D from '../../components/SavModel3D.vue'
 
 const beforeManifestUrl = `${import.meta.env.BASE_URL}models/xieyaqian/manifest.json`
 const afterManifestUrl = `${import.meta.env.BASE_URL}models/xieyahou/manifest.json`
-const reliefPlanUrl = `${import.meta.env.BASE_URL}models/relief/straight-plan.json`
+// The supplied FLAC3D SAVE is the inclined-10° variable-diameter model.
+const reliefPlanUrl = `${import.meta.env.BASE_URL}models/relief/inclined-plan.json`
 
 const stage = ref('initial')
-const planVariant = ref('straight')
 const reliefPlan = ref([])
+let reliefPlanRequestId = 0
 const evaluationOpen = ref(false)
 const viewerStatuses = ref({
   before: { state: 'loading', message: '', manifest: null, metrics: null },
@@ -37,8 +38,10 @@ const spacing = computed(() => {
   ).toFixed(4)} m`
 })
 const changePosition = computed(() => {
-  const coordinate = reliefPlan.value[0]?.diameter_change_coordinate
-  return coordinate ? `X = ${Number(coordinate[0]).toFixed(2)} m` : '--'
+  const item = reliefPlan.value[0]
+  const coordinate = item?.diameter_change_coordinate
+  if (!coordinate) return '--'
+  return `X = ${Number(coordinate[0]).toFixed(2)} m · Z = ${Number(coordinate[2]).toFixed(2)} m`
 })
 const sourceReady = computed(() => viewerStatuses.value.before.state === 'ready'
   && (!reliefStarted.value || viewerStatuses.value.after.state === 'ready'))
@@ -49,7 +52,7 @@ const decisionParameters = computed(() => [
   { index: 'P4', label: '卸压孔孔径', value: `${reliefDiameter.value} mm`, detail: '峰值超过平均应力 1.5 倍，采用 300 mm' },
   { index: 'P5', label: '钻进孔孔长', value: '3.90 m', detail: '巷道壁至高应力快速增长区' },
   { index: 'P6', label: '卸压孔孔长', value: reliefLengthRange.value, detail: '靶区长度外延 0.5–1.0 m' },
-  { index: 'P7', label: '变径位置', value: changePosition.value, detail: planVariant.value === 'inclined' ? '沿倾斜方向定位' : '沿 +X 方向定位' }
+  { index: 'P7', label: '变径位置', value: changePosition.value, detail: '沿 10° 倾斜方向定位（来自 FLAC3D SAVE 模型）' }
 ])
 
 const formulas = [
@@ -117,18 +120,18 @@ function advanceStage() {
 }
 
 async function loadReliefPlan() {
+  const requestId = ++reliefPlanRequestId
   try {
     const response = await fetch(reliefPlanUrl, { cache: 'no-store' })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    reliefPlan.value = await response.json()
+    const nextPlan = await response.json()
+    if (requestId === reliefPlanRequestId) reliefPlan.value = nextPlan
   } catch (error) {
     console.error('卸压参数载入失败', error)
   }
 }
 
-onMounted(() => {
-  loadReliefPlan()
-})
+onMounted(loadReliefPlan)
 </script>
 
 <template>
@@ -158,12 +161,7 @@ onMounted(() => {
               <span>NUMERICAL MODEL / 800 M DEPTH</span>
               <strong>{{ reliefStarted ? '卸压前后数值演示对比' : '800米埋深巷道卸压前 Von-Mises 应力数值演示模型' }}</strong>
             </div>
-            <div v-if="decisionReady" class="plan-switch" role="group" aria-label="卸压孔方案">
-              <button type="button" :class="{ active: planVariant === 'straight' }" @click="planVariant = 'straight'">水平变径孔</button>
-              <button type="button" :class="{ active: planVariant === 'inclined' }" @click="planVariant = 'inclined'">
-                倾斜卸压 <small>参数化预览</small>
-              </button>
-            </div>
+            <div v-if="decisionReady" class="plan-badge">倾斜卸压 · 10° SAVE 数据</div>
           </header>
 
           <div class="model-grid" :class="{ comparing: reliefStarted }">
@@ -183,7 +181,7 @@ onMounted(() => {
                   :show-target-panel="false"
                   :show-relief-plan="decisionReady"
                   :relief-plan="reliefPlan"
-                  :relief-variant="planVariant"
+                  :relief-variant="'inclined'"
                   @status="updateStatus"
                 />
               </div>
@@ -389,10 +387,7 @@ onMounted(() => {
 .section-heading span, .section-heading strong { display: block; }
 .section-heading span { color: #69cbd9; font: 10px Electronic, monospace; }
 .section-heading strong { margin-top: 4px; color: #d7e5e7; font-size: 16px; font-weight: 500; }
-.plan-switch { display: flex; padding: 3px; background: rgba(4, 14, 21, .82); border: 1px solid var(--line); }
-.plan-switch button { min-width: 98px; height: 30px; color: #738d96; font-size: 11px; background: transparent; border: 0; cursor: pointer; }
-.plan-switch button.active { color: #e5f4f5; background: rgba(0, 219, 234, .13); }
-.plan-switch small { margin-left: 4px; color: #67d29f; font: 8px Electronic, monospace; }
+.plan-badge { padding: 8px 11px; color: #a9e6d2; font: 10px Electronic, monospace; background: rgba(41, 139, 112, .12); border: 1px solid rgba(103, 210, 159, .32); }
 .model-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; min-height: 0; }
 .model-grid.comparing { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .model-panel { display: grid; grid-template-rows: 36px minmax(0, 1fr); min-width: 0; min-height: 0; }
@@ -546,7 +541,6 @@ onMounted(() => {
   .brand span { font-size: 8px; }
   .brand strong { font-size: 15px; }
   .section-heading { display: block; }
-  .plan-switch { margin-top: 9px; width: max-content; }
   .model-panel { grid-template-rows: 36px 500px; }
   .panel-label strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .modal-backdrop { padding: 10px; }
