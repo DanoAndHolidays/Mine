@@ -24,7 +24,7 @@
       <code>{{ manifestUrl }}</code>
     </div>
 
-    <div v-if="loadState === 'ready'" class="stress-legend">
+    <div v-if="loadState === 'ready' && showPressureData" class="stress-legend">
       <span>高</span>
       <i></i>
       <span>低</span>
@@ -33,7 +33,7 @@
     </div>
 
     <aside
-      v-if="loadState === 'ready' && targetInfo && showTargetPanel"
+      v-if="loadState === 'ready' && showPressureData && targetInfo && showTargetPanel"
       class="target-identification"
       :class="{ active: targetActive }"
     >
@@ -67,7 +67,7 @@
       </div>
     </aside>
 
-    <div ref="targetMarker" class="target-marker" aria-hidden="true">
+    <div v-if="showPressureData" ref="targetMarker" class="target-marker" aria-hidden="true">
       <i></i>
       <span>
         <strong>{{ isAfter ? '残余峰值' : '峰值应力' }}</strong>
@@ -150,6 +150,10 @@ const props = defineProps({
     type: Boolean,
     default: true
   },
+  showPressureData: {
+    type: Boolean,
+    default: true
+  },
   showReliefPlan: {
     type: Boolean,
     default: false
@@ -177,7 +181,7 @@ const hovered = ref(false)
 const surfaceMode = ref('all')
 const wireframe = ref(false)
 const autoRotate = ref(false)
-const targetActive = ref(props.targetVisible ?? props.defaultTargetActive)
+const targetActive = ref(props.showPressureData && (props.targetVisible ?? props.defaultTargetActive))
 const renderedZoneCount = ref(0)
 const renderedPeakStress = ref(null)
 
@@ -202,6 +206,7 @@ const sourceSummary = computed(() => {
 
 const stateLabel = computed(() => {
   if (loadState.value === 'ready') {
+    if (isAfter.value && !props.showPressureData) return '卸压孔模型已载入'
     return isAfter.value ? '卸压后模型已载入' : '卸压前模型已载入'
   }
   return ({
@@ -391,6 +396,8 @@ async function createStressLayer(config, name, renderOrder) {
   material.userData.baseOpacity = material.opacity
   material.userData.baseTransparent = true
   material.userData.baseDepthWrite = material.depthWrite
+  material.userData.baseVertexColors = true
+  material.userData.baseColor = material.color.clone()
 
   const mesh = new THREE.Mesh(geometry, material)
   mesh.name = name
@@ -583,6 +590,8 @@ function configureMesh(mesh) {
     material.userData.baseOpacity = material.opacity
     material.userData.baseTransparent = material.transparent
     material.userData.baseDepthWrite = material.depthWrite
+    material.userData.baseVertexColors = material.vertexColors
+    material.userData.baseColor = material.color?.clone?.() || null
     material.needsUpdate = true
     return material
   })
@@ -620,7 +629,7 @@ function updateSurfaceVisibility() {
   exteriorMeshes.forEach((mesh) => { mesh.visible = showExterior })
   sliceGridLines.forEach((lines) => { lines.visible = showRoadway })
   tunnelOutlineLines.forEach((lines) => { lines.visible = showRoadway })
-  const showTarget = targetActive.value && showRoadway
+  const showTarget = props.showPressureData && targetActive.value && showRoadway
   if (highStressVolume) highStressVolume.visible = showTarget
   if (highStressHalo) highStressHalo.visible = showTarget
   if (reliefPlanGroup) reliefPlanGroup.visible = props.showReliefPlan && showRoadway
@@ -628,23 +637,42 @@ function updateSurfaceVisibility() {
 }
 
 function updateTargetVisualization() {
-  const dimRoadway = !pyvistaManifest.value && targetActive.value && surfaceMode.value !== 'exterior'
-  roadwayMeshes.forEach((mesh) => {
-    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
-    materials.forEach((material) => {
-      material.transparent = dimRoadway || material.userData.baseTransparent
-      material.opacity = dimRoadway
-        ? (isAfter.value ? 0.88 : 0.82)
-        : material.userData.baseOpacity
-      material.depthWrite = dimRoadway ? false : material.userData.baseDepthWrite
-      material.needsUpdate = true
+  const pressureVisible = props.showPressureData
+  const dimRoadway = pressureVisible
+    && !pyvistaManifest.value
+    && targetActive.value
+    && surfaceMode.value !== 'exterior'
+
+  const updateMaterials = (meshes, neutralColor, neutralOpacity) => {
+    meshes.forEach((mesh) => {
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material]
+      materials.forEach((material) => {
+        const baseVertexColors = Boolean(material.userData.baseVertexColors)
+        material.vertexColors = pressureVisible && baseVertexColors
+        if (material.color && material.userData.baseColor) {
+          material.color.copy(pressureVisible ? material.userData.baseColor : new THREE.Color(neutralColor))
+        }
+        material.transparent = !pressureVisible || dimRoadway || material.userData.baseTransparent
+        material.opacity = dimRoadway
+          ? (isAfter.value ? 0.88 : 0.82)
+          : pressureVisible
+            ? material.userData.baseOpacity
+            : Math.min(material.userData.baseOpacity, neutralOpacity)
+        material.depthWrite = pressureVisible && !dimRoadway
+          ? material.userData.baseDepthWrite
+          : false
+        material.needsUpdate = true
+      })
     })
-  })
+  }
+
+  updateMaterials(roadwayMeshes, '#71878d', 0.48)
+  updateMaterials(exteriorMeshes, '#30434a', 0.2)
   updateSurfaceVisibility()
 }
 
 function toggleTargetIdentification() {
-  if (!targetInfo.value || !highStressVolume) return
+  if (!props.showPressureData || !targetInfo.value || !highStressVolume) return
   if (!targetActive.value && surfaceMode.value === 'exterior') {
     surfaceMode.value = 'roadway'
   }
@@ -755,7 +783,8 @@ function updateTargetMarker() {
   const marker = targetMarker.value
   if (!marker) return
   if (
-    !targetActive.value
+    !props.showPressureData
+    || !targetActive.value
     || surfaceMode.value === 'exterior'
     || loadState.value !== 'ready'
     || !targetPosition
@@ -908,7 +937,7 @@ function fitCamera() {
   if (!camera || !controls) return
   const visibleObjects = [...roadwayMeshes, ...exteriorMeshes]
     .filter((mesh) => mesh.visible)
-  if (targetActive.value && highStressVolume?.visible) {
+  if (props.showPressureData && targetActive.value && highStressVolume?.visible) {
     visibleObjects.push(highStressVolume)
   }
   if (props.showReliefPlan && reliefPlanGroup?.visible) {
@@ -1107,7 +1136,12 @@ watch(targetActive, () => {
 })
 watch(() => props.targetVisible, (value) => {
   if (value === null) return
-  targetActive.value = value
+  targetActive.value = props.showPressureData && value
+})
+watch(() => props.showPressureData, (visible) => {
+  targetActive.value = visible && (props.targetVisible ?? props.defaultTargetActive)
+  updateTargetVisualization()
+  fitCamera()
 })
 watch(
   () => [props.showReliefPlan, props.reliefVariant, props.reliefPlan],

@@ -16,10 +16,11 @@ const viewerStatuses = ref({
   after: { state: 'idle', message: '', manifest: null, metrics: null }
 })
 
-const stageOrder = ['initial', 'decision', 'relieving']
+const stageOrder = ['initial', 'decision', 'relief-preview', 'relieving']
 const stageIndex = computed(() => stageOrder.indexOf(stage.value))
 const decisionReady = computed(() => stageIndex.value >= 1)
-const reliefStarted = computed(() => stage.value === 'relieving')
+const reliefPreviewShown = computed(() => stageIndex.value >= 2)
+const reliefResultShown = computed(() => stage.value === 'relieving')
 const averageStress = computed(() => Number(viewerStatuses.value.before.metrics?.averageStressMpa) || 24.681)
 const peakStress = computed(() => Number(viewerStatuses.value.before.metrics?.peakStressMpa) || 46.6618)
 const thresholdStress = computed(() => averageStress.value * 1.2)
@@ -44,7 +45,7 @@ const changePosition = computed(() => {
   return `X = ${Number(coordinate[0]).toFixed(2)} m · Z = ${Number(coordinate[2]).toFixed(2)} m`
 })
 const sourceReady = computed(() => viewerStatuses.value.before.state === 'ready'
-  && (!reliefStarted.value || viewerStatuses.value.after.state === 'ready'))
+  && (!reliefPreviewShown.value || viewerStatuses.value.after.state === 'ready'))
 const decisionParameters = computed(() => [
   { index: 'P1', label: '高应力靶区', value: `σ ≥ ${thresholdStress.value.toFixed(2)} MPa`, detail: '理论判据：高于模型平均应力的 1.2 倍' },
   { index: 'P2', label: '孔间距', value: spacing.value, detail: `${reliefPlan.value.length || 8} 孔覆盖靶区宽度` },
@@ -115,6 +116,8 @@ function advanceStage() {
     stage.value = 'decision'
   } else if (stage.value === 'decision') {
     viewerStatuses.value.after = { state: 'loading', message: '', manifest: null, metrics: null }
+    stage.value = 'relief-preview'
+  } else if (stage.value === 'relief-preview') {
     stage.value = 'relieving'
   }
 }
@@ -159,12 +162,12 @@ onMounted(loadReliefPlan)
           <header class="section-heading">
             <div>
               <span>NUMERICAL MODEL / 800 M DEPTH</span>
-              <strong>{{ reliefStarted ? '卸压前后数值演示对比' : '800米埋深巷道卸压前 Von-Mises 应力数值演示模型' }}</strong>
+              <strong>{{ reliefPreviewShown ? '卸压前后数值演示对比' : '800米埋深巷道卸压前 Von-Mises 应力数值演示模型' }}</strong>
             </div>
             <div v-if="decisionReady" class="plan-badge">倾斜卸压 · 10° SAVE 数据</div>
           </header>
 
-          <div class="model-grid" :class="{ comparing: reliefStarted }">
+          <div class="model-grid" :class="{ comparing: reliefPreviewShown }">
             <article class="model-panel before-panel">
               <div class="panel-label">
                 <span>01 / 卸压前</span>
@@ -188,17 +191,21 @@ onMounted(loadReliefPlan)
             </article>
 
             <Transition name="model-reveal">
-              <article v-if="reliefStarted" class="model-panel after-panel">
-                <div class="panel-label"><span>02 / 卸压后</span><strong>残余应力场与卸压结果</strong></div>
+              <article v-if="reliefPreviewShown" class="model-panel after-panel">
+                <div class="panel-label">
+                  <span>02 / 卸压后</span>
+                  <strong>{{ reliefResultShown ? '残余应力场与卸压结果' : '倾斜卸压孔数据预览' }}</strong>
+                </div>
                 <div class="model-viewport">
                   <i class="corner top-left"></i><i class="corner top-right"></i>
                   <i class="corner bottom-left"></i><i class="corner bottom-right"></i>
                   <SavModel3D
                     phase="after"
                     :manifest-url="afterManifestUrl"
-                    target-visible
+                    :target-visible="reliefResultShown"
                     :show-target-panel="false"
-                    :show-relief-plan="reliefStarted"
+                    :show-relief-plan="reliefPreviewShown"
+                    :show-pressure-data="reliefResultShown"
                     :relief-plan="reliefPlan"
                     :relief-variant="'inclined'"
                     @status="updateStatus"
@@ -249,11 +256,14 @@ onMounted(loadReliefPlan)
         <ol class="stage-track">
           <li :class="{ active: stageIndex >= 0, current: stage === 'initial' }"><span>1</span><div><strong>原始模型</strong><small>读取卸压前 SAV</small></div></li>
           <li :class="{ active: stageIndex >= 1, current: stage === 'decision' }"><span>2</span><div><strong>卸压决策</strong><small>识别靶区并生成参数</small></div></li>
-          <li :class="{ active: stageIndex >= 2, current: stage === 'relieving' }"><span>3</span><div><strong>卸压结果</strong><small>加载卸压后 SAV</small></div></li>
+          <li :class="{ active: stageIndex >= 2, current: reliefPreviewShown }"><span>3</span><div><strong>卸压结果</strong><small>{{ reliefResultShown ? '加载卸压后 SAV' : '先展示倾斜钻孔数据' }}</small></div></li>
         </ol>
         <div class="command-actions">
-          <button v-if="!reliefStarted" class="primary-action" type="button" :disabled="viewerStatuses.before.state !== 'ready'" @click="advanceStage">
+          <button v-if="!reliefPreviewShown" class="primary-action" type="button" :disabled="viewerStatuses.before.state !== 'ready'" @click="advanceStage">
             <span>{{ stage === 'initial' ? '识别靶区并生成卸压决策' : '开始卸压并生成结果' }}</span><i aria-hidden="true">→</i>
+          </button>
+          <button v-else-if="!reliefResultShown" class="primary-action" type="button" :disabled="viewerStatuses.after.state !== 'ready'" @click="advanceStage">
+            <span>展示卸压压力结果</span><i aria-hidden="true">→</i>
           </button>
           <button v-else class="evaluation-action" type="button" :disabled="viewerStatuses.after.state !== 'ready'" @click="evaluationOpen = true">卸压效果评估</button>
         </div>
