@@ -4,11 +4,9 @@ import SavModel3D from '../../components/SavModel3D.vue'
 
 const beforeManifestUrl = `${import.meta.env.BASE_URL}models/xieyaqian/manifest.json`
 const afterManifestUrl = `${import.meta.env.BASE_URL}models/xieyahou-inclined/manifest.json`
-// Each SAV export has its own coordinate-aligned drilling plan. The before model
-// is the supplied horizontal post-relief geometry; the after model is the supplied 10°
-// inclined relief export. Keeping the plans separate prevents overlaying the
-// inclined coordinates on the horizontal roadway geometry.
-const beforeReliefPlanUrl = `${import.meta.env.BASE_URL}models/relief/straight-plan.json`
+// Both panels use the same 10° drilling inclination while keeping their own
+// coordinate-aligned plans, so the original left model remains unchanged.
+const beforeReliefPlanUrl = `${import.meta.env.BASE_URL}models/relief/before-inclined-plan.json`
 const afterReliefPlanUrl = `${import.meta.env.BASE_URL}models/relief/inclined-plan.json`
 
 const stage = ref('initial')
@@ -218,7 +216,7 @@ onMounted(loadReliefPlan)
                   :show-target-panel="false"
                   :show-relief-plan="decisionReady"
                   :relief-plan="beforeReliefPlan"
-                  :relief-variant="'straight'"
+                  :relief-variant="'inclined'"
                   @status="updateStatus"
                 />
               </div>
